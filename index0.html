@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Minimal WebGL Green Box (Responsive)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+    <script>
+        // Load shader from external file
+        async function loadShaderSource(url) {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Failed to load shader: ${url}`);
+            }
+            return await response.text();
+        }
+
+        // Compile shader helper
+        function compileShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+           
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        // Main initialization function (async)
+        async function init() {
+            const canvas = document.getElementById('glCanvas');
+            const gl = canvas.getContext('webgl');
+            
+            // Set canvas size
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                gl.viewport(0, 0, canvas.width, canvas.height);
+            }
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            // Vertex shader source
+            let vsSource;
+            try {
+                vsSource = await loadShaderSource("vertex.glsl");
+                console.log("Vertex shader loaded successfully");
+            } catch (error){
+                console.error("error loading vertex shader:", error);
+                vsSource = '';
+            }
+
+            // Load fragment shader from external file
+            let fsSource;
+            try {
+                fsSource = await loadShaderSource("fragment0.glsl");
+                console.log("Fragment shader loaded successfully");
+            } catch (error) {
+                console.error("Error loading fragment shader:", error);
+                // Fallback to inline shader if file not found
+                fsSource = '';
+            }
+
+            // Compile shaders
+            const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
+
+            if (!vertexShader || !fragmentShader) {
+                console.error("Shader compilation failed!");
+                return;
+            }
+
+            // Create program
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program linking error:', gl.getProgramInfoLog(program));
+                return;
+            }
+
+            gl.useProgram(program);
+
+            // Define a square (two triangles)
+            const vertices = new Float32Array([
+                -0.5, -0.5,  // Bottom-left
+                 0.5, -0.5,  // Bottom-right
+                -0.5,  0.5,  // Top-left
+                 0.5,  0.5   // Top-right
+            ]);
+
+            // Create and bind vertex buffer
+            const vertexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+            // Point to vertex data
+            const positionAttributeLocation = gl.getAttribLocation(program, 'aPosition');
+            gl.enableVertexAttribArray(positionAttributeLocation);
+            gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+            // Clear and draw
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        }
+
+        // Start the application
+        init().catch(error => {
+            console.error("Initialization error:", error);
+        });
+    </script>
+</body>
+</html>
