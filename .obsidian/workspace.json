@@ -200,6 +200,9 @@
   },
   "active": "1974c4fd481eb991",
   "lastOpenFiles": [
+    "how to run.md",
+    "colormap GOAT.md",
+    "next steps.md",
     "wave_equation_rain copy.html",
     "wave_equation_rain.html",
     "wave_equation_rain_prev.html",
@@ -207,12 +210,8 @@
     "wave_equation copy.html",
     "wave_equation0.html",
     "wave_equation_single_file.html",
-    "how to run.md",
-    "next steps.md",
-    "colormap GOAT.md",
     "wave_equation_v2.html",
     "display_wave.glsl",
-    "compute_wave.glsl",
-    "wave_equation.html"
+    "compute_wave.glsl"
   ]
 }

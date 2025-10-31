@@ -6,3 +6,8 @@
 
 - the waveequation simulation works now
 - next: fix rain visualization
+
+
+- fix performance issue when adding to the texture with the mouse click
+- add touchscreen event handling
+-  implement fluid simulation of smoke, based on shadertoy (https://www.shadertoy.com/view/4tGfDW)

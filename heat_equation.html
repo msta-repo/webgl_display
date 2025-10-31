@@ -118,49 +118,6 @@
             mouseState.normalizedY = 1.0 - (mouseState.y / canvas.height); // Flip Y for WebGL coordinates
         }
 
-        function addGaussianHeatPulse(gl, texture, width, height, normalizedX, normalizedY) {
-            // Create a temporary buffer to read the current texture data
-            const currentData = new Float32Array(width * height * 4);
-            
-            // Bind framebuffer to read from texture
-            const tempFb = gl.createFramebuffer();
-            gl.bindFramebuffer(gl.FRAMEBUFFER, tempFb);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-            
-            gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, currentData);
-            
-            // Clean up temporary framebuffer
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            gl.deleteFramebuffer(tempFb);
-
-            // Convert normalized coordinates to texture coordinates
-            const pulseX = Math.floor(normalizedX * width);
-            const pulseY = Math.floor(normalizedY * height);
-            const pulseAmplitude = 2.0;  // Heat amount to add
-            const pulseWidth = 50.0;     // Size of the heat spot
-
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const idx = (y * width + x) * 4;
-                    const dx = x - pulseX;
-                    const dy = y - pulseY;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    const value = pulseAmplitude * Math.exp(-dist * dist / pulseWidth);
-
-                    // Add the heat pulse to the existing data
-                    currentData[idx] += value;     // R
-                    currentData[idx + 1] += value; // G
-                    currentData[idx + 2] += value; // B
-                    // Alpha channel is unchanged
-                }
-            }
-
-            // Update the texture with the combined data
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.FLOAT, currentData);
-        }
-
-
 
         // Main initialization function (async)
         async function init() {
@@ -283,6 +240,12 @@
             const computeResLoc = gl.getUniformLocation(computeProgram, 'u_resolution');
             const computeDtLoc = gl.getUniformLocation(computeProgram, 'u_dt');
             const computeDLoc = gl.getUniformLocation(computeProgram, 'u_D');
+            
+            // New uniforms for heat addition
+            const computeAddHeatLoc = gl.getUniformLocation(computeProgram, 'u_addHeat');
+            const computeHeatPosLoc = gl.getUniformLocation(computeProgram, 'u_heatPos');
+            const computeHeatAmplitudeLoc = gl.getUniformLocation(computeProgram, 'u_heatAmplitude');
+            const computeHeatWidthLoc = gl.getUniformLocation(computeProgram, 'u_heatWidth');
 
             // Get attribute and uniform locations for display program
             gl.useProgram(displayProgram);
@@ -291,8 +254,12 @@
             const displayResLoc = gl.getUniformLocation(displayProgram, 'u_resolution');
             
             // Simulation parameters
-            const D = 20;  // Diffusion coefficient
+            const D = 2;  // Diffusion coefficient
             dt = 0.01; // Time step (must satisfy stability: dt * D / h^2 <= 0.25)
+            
+            // Heat pulse parameters
+            const pulseAmplitude = 0.5;
+            const pulseWidth = 10.0;
 
             let currentRead = 0; // 0 or 1 (ping-pong)
 
@@ -301,8 +268,6 @@
                 // === COMPUTE STEP: Read from current, write to next ===
                 const readTexture = currentRead === 0 ? texture0 : texture1;
                 const writeFramebuffer = currentRead === 0 ? framebuffer1 : framebuffer0;
-
-    
 
                 gl.bindFramebuffer(gl.FRAMEBUFFER, writeFramebuffer);
                 gl.viewport(0, 0, simWidth, simHeight);
@@ -315,6 +280,16 @@
                 gl.uniform2f(computeResLoc, simWidth, simHeight);
                 gl.uniform1f(computeDtLoc, dt);
                 gl.uniform1f(computeDLoc, D);
+                
+                // Set heat addition uniforms
+                if (mouseState.isDown) {
+                    gl.uniform1i(computeAddHeatLoc, 1);
+                    gl.uniform2f(computeHeatPosLoc, mouseState.normalizedX, mouseState.normalizedY);
+                    gl.uniform1f(computeHeatAmplitudeLoc, pulseAmplitude);
+                    gl.uniform1f(computeHeatWidthLoc, pulseWidth);
+                } else {
+                    gl.uniform1i(computeAddHeatLoc, 0);
+                }
 
                 // Set up attributes
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
@@ -323,12 +298,6 @@
 
                 // Draw to framebuffer
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-                if (mouseState.isDown) {
-                    const writeTexture = currentRead === 0 ? texture1 : texture0;
-                    addGaussianHeatPulse(gl, writeTexture, simWidth, simHeight, 
-                                        mouseState.normalizedX, mouseState.normalizedY);
-                }
 
                 // === DISPLAY STEP: Render result to canvas ===
                 const displayTexture = currentRead === 0 ? texture1 : texture0;

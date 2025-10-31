@@ -8,6 +8,13 @@ uniform sampler2D u_psi;
 uniform vec2 u_resolution;
 uniform float u_dt;
 uniform float u_D;
+
+// Heat addition uniforms
+uniform bool u_addHeat;
+uniform vec2 u_heatPos;
+uniform float u_heatAmplitude;
+uniform float u_heatWidth;
+
 varying float vX;
 varying float vY;
 
@@ -17,16 +24,6 @@ void main() {
     
     // Calculate texture space step (1 pixel)
     vec2 h = 1.0 / u_resolution;
-    
-    // Check if we're at the boundary (heat sink)
-   // if (texCoord.x < 20.0 * h.x){
-        //texCoord.x > 1.0 - 20.0 * h.x){// ||
-        //texCoord.y < 20.0 * h.y ||
-        //texCoord.y > 1.0 - 20.0 * h.y) {
-        // Boundary: fixed at 0.0 (heat sink)
-   //     gl_FragColor = vec4(-10.0, -10.0, -10.0, 1.0);
-    //    return;
-    //}
     
     // Sample current value and neighbors
     float center = texture2D(u_psi, texCoord).r;
@@ -40,6 +37,21 @@ void main() {
     
     // Update: psi_{next} = psi_{current} + dt * D * Laplacian(psi)
     float psi_next = center + u_dt * u_D * laplacian;
+    
+    // Add Gaussian heat pulse if enabled
+    if (u_addHeat) {
+        // Convert texture coordinates to pixel coordinates
+        vec2 pixelCoord = texCoord * u_resolution;
+        vec2 pulsePixelPos = u_heatPos * u_resolution;
+        
+        // Calculate distance from heat source
+        vec2 delta = pixelCoord - pulsePixelPos;
+        float dist = length(delta);
+        
+        // Add Gaussian heat distribution
+        float heatValue = u_heatAmplitude * exp(-dist * dist / u_heatWidth);
+        psi_next += heatValue;
+    }
     
     // Output to all channels
     gl_FragColor = vec4(psi_next, psi_next, psi_next, 1.0);
