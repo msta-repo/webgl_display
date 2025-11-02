@@ -48,9 +48,23 @@
               "icon": "lucide-file",
               "title": "next steps"
             }
+          },
+          {
+            "id": "22a27cf3e877f77e",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Untitled.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Untitled"
+            }
           }
         ],
-        "currentTab": 2
+        "currentTab": 3
       }
     ],
     "direction": "vertical"
@@ -198,11 +212,12 @@
       "bases:Create new base": false
     }
   },
-  "active": "1974c4fd481eb991",
+  "active": "22a27cf3e877f77e",
   "lastOpenFiles": [
+    "next steps.md",
+    "Untitled.md",
     "how to run.md",
     "colormap GOAT.md",
-    "next steps.md",
     "wave_equation_rain copy.html",
     "wave_equation_rain.html",
     "wave_equation_rain_prev.html",

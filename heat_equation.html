@@ -8,6 +8,7 @@
             margin: 0;
             overflow: hidden;
             background-color: #111;
+            touch-action: none; /* Prevent default touch behaviors like scrolling */
         }
 
         canvas {
@@ -79,7 +80,7 @@
         }
 
 
-        // Mouse state tracking
+        // Mouse/Touch state tracking
         let mouseState = {
             isDown: false,
             x: 0,
@@ -88,11 +89,22 @@
             normalizedY: 0   // [0, 1] range
         };
 
+        // Update position helper function (used by both mouse and touch)
+        function updatePosition(canvas, clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            mouseState.x = clientX - rect.left;
+            mouseState.y = clientY - rect.top;
+            
+            // Normalize to [0, 1] range
+            mouseState.normalizedX = mouseState.x / canvas.width;
+            mouseState.normalizedY = 1.0 - (mouseState.y / canvas.height); // Flip Y for WebGL coordinates
+        }
+
         // Mouse event handlers
         function setupMouseHandlers(canvas) {
             canvas.addEventListener('mousedown', (e) => {
                 mouseState.isDown = true;
-                updateMousePosition(canvas, e);
+                updatePosition(canvas, e.clientX, e.clientY);
             });
 
             canvas.addEventListener('mouseup', () => {
@@ -100,7 +112,7 @@
             });
 
             canvas.addEventListener('mousemove', (e) => {
-                updateMousePosition(canvas, e);
+                updatePosition(canvas, e.clientX, e.clientY);
             });
 
             canvas.addEventListener('mouseleave', () => {
@@ -108,14 +120,34 @@
             });
         }
 
-        function updateMousePosition(canvas, event) {
-            const rect = canvas.getBoundingClientRect();
-            mouseState.x = event.clientX - rect.left;
-            mouseState.y = event.clientY - rect.top;
-            
-            // Normalize to [0, 1] range
-            mouseState.normalizedX = mouseState.x / canvas.width;
-            mouseState.normalizedY = 1.0 - (mouseState.y / canvas.height); // Flip Y for WebGL coordinates
+        // Touch event handlers
+        function setupTouchHandlers(canvas) {
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Prevent scrolling and other default behaviors
+                if (e.touches.length > 0) {
+                    mouseState.isDown = true;
+                    const touch = e.touches[0];
+                    updatePosition(canvas, touch.clientX, touch.clientY);
+                }
+            });
+
+            canvas.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                mouseState.isDown = false;
+            });
+
+            canvas.addEventListener('touchcancel', (e) => {
+                e.preventDefault();
+                mouseState.isDown = false;
+            });
+
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                if (e.touches.length > 0) {
+                    const touch = e.touches[0];
+                    updatePosition(canvas, touch.clientX, touch.clientY);
+                }
+            });
         }
 
 
@@ -152,7 +184,9 @@
 
             resizeCanvas();
 
+            // Setup both mouse and touch handlers
             setupMouseHandlers(canvas);
+            setupTouchHandlers(canvas);
 
             // Load vertex shader
             let vsSource;
