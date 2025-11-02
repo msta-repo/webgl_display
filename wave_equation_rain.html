@@ -78,11 +78,10 @@
             isDown: false,
             x: 0,
             y: 0,
-            normalizedX: 0,  // [0, 1] range
-            normalizedY: 0   // [0, 1] range
+            normalizedX: 0,
+            normalizedY: 0
         };
 
-        // Mouse event handlers
         function setupMouseHandlers(canvas) {
             canvas.addEventListener('mousedown', (e) => {
                 mouseState.isDown = true;
@@ -107,9 +106,8 @@
             mouseState.x = event.clientX - rect.left;
             mouseState.y = event.clientY - rect.top;
             
-            // Normalize to [0, 1] range
             mouseState.normalizedX = mouseState.x / canvas.width;
-            mouseState.normalizedY = 1.0 - (mouseState.y / canvas.height); // Flip Y for WebGL coordinates
+            mouseState.normalizedY = 1.0 - (mouseState.y / canvas.height);
         }
 
         async function init() {
@@ -121,18 +119,16 @@
                 return;
             }
 
-            // Check for required extensions
             const floatExt = gl.getExtension('OES_texture_float');
             if (!floatExt) {
                 console.error('OES_texture_float extension not supported');
-                alert('Your browser does not support floating point textures. This simulation requires WebGL with OES_texture_float extension.');
+                alert('Your browser does not support floating point textures.');
                 return;
             }
 
-            // Optional but recommended for better compatibility
             const floatLinearExt = gl.getExtension('OES_texture_float_linear');
             if (!floatLinearExt) {
-                console.warn('OES_texture_float_linear not supported - filtering may be limited');
+                console.warn('OES_texture_float_linear not supported');
             }
 
             const simWidth = Math.floor(window.innerWidth);
@@ -147,9 +143,10 @@
 
             setupMouseHandlers(canvas);
 
-            let vsSource, computeSource, displaySource;
+            let vsSource, writeSource, computeSource, displaySource;
             try {
                 vsSource = await loadShaderSource("vertex.glsl");
+                writeSource = await loadShaderSource("write_texture.glsl");
                 computeSource = await loadShaderSource("compute_wave.glsl");
                 displaySource = await loadShaderSource("display_wave.glsl");
             } catch (error) {
@@ -158,42 +155,40 @@
             }
 
             const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+            const writeFragShader = compileShader(gl, gl.FRAGMENT_SHADER, writeSource);
             const computeFragShader = compileShader(gl, gl.FRAGMENT_SHADER, computeSource);
             const displayFragShader = compileShader(gl, gl.FRAGMENT_SHADER, displaySource);
 
-            if (!vertexShader || !computeFragShader || !displayFragShader) {
+            if (!vertexShader || !writeFragShader || !computeFragShader || !displayFragShader) {
                 console.error("Shader compilation failed!");
                 return;
             }
 
+            const writeProgram = createProgram(gl, vertexShader, writeFragShader);
             const computeProgram = createProgram(gl, vertexShader, computeFragShader);
             const displayProgram = createProgram(gl, vertexShader, displayFragShader);
 
-            // Create initial condition using Float32Array
+            // Create initial condition
             const initialData = new Float32Array(simWidth * simHeight * 4);
-            for (let y = 0; y < simHeight; y++) {
-                for (let x = 0; x < simWidth; x++) {
-                    const idx = (y * simWidth + x) * 4;
-                    const dx = x - simWidth / 2;
-                    const dy = y - simHeight / 2;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    // Gaussian pulse - now can be any float value
-                    const value = 0.0*Math.exp(-dist * dist / 500.0) * 1.0;
-                    
-                    initialData[idx] = value;     // R
-                    initialData[idx + 1] = value; // G
-                    initialData[idx + 2] = value; // B
-                    initialData[idx + 3] = value;   // A
-                }
+            for (let i = 0; i < simWidth * simHeight * 4; i += 4) {
+                initialData[i] = 0.0;
+                initialData[i + 1] = 0.0;
+                initialData[i + 2] = 0.0;
+                initialData[i + 3] = 1.0;
             }
             
+            // Main textures for wave equation (triple buffering)
             const texture0 = createTexture(gl, simWidth, simHeight, initialData);
             const texture1 = createTexture(gl, simWidth, simHeight, initialData);
             const texture2 = createTexture(gl, simWidth, simHeight, null);
+            
+            // Temporary texture for source addition
+            const textureTmp = createTexture(gl, simWidth, simHeight, null);
 
             const framebuffer0 = createFramebuffer(gl, texture0);
             const framebuffer1 = createFramebuffer(gl, texture1);
             const framebuffer2 = createFramebuffer(gl, texture2);
+            const framebufferTmp = createFramebuffer(gl, textureTmp);
             
             const textures = [texture0, texture1, texture2];
             const framebuffers = [framebuffer0, framebuffer1, framebuffer2];
@@ -209,6 +204,19 @@
             gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
             gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
+            // Get uniform locations for write program
+            gl.useProgram(writeProgram);
+            const writePosLoc = gl.getAttribLocation(writeProgram, 'aPosition');
+            const writePsiLoc = gl.getUniformLocation(writeProgram, 'u_psi');
+            const writeResLoc = gl.getUniformLocation(writeProgram, 'u_resolution');
+            const writeAddPulseLoc = gl.getUniformLocation(writeProgram, 'u_addPulse');
+            const writePulsePosLoc = gl.getUniformLocation(writeProgram, 'u_pulsePos');
+            const writePulseAmplitudeLoc = gl.getUniformLocation(writeProgram, 'u_pulseAmplitude');
+            const writePulseSigmaXLoc = gl.getUniformLocation(writeProgram, 'u_pulseSigmaX');
+            const writePulseSigmaYLoc = gl.getUniformLocation(writeProgram, 'u_pulseSigmaY');
+            const writePulsePhiLoc = gl.getUniformLocation(writeProgram, 'u_pulsePhi');
+            const computeAttenuateLoc = gl.getUniformLocation(writeProgram, 'u_attenuate');
+            
             // Get uniform locations for compute program
             gl.useProgram(computeProgram);
             const computePosLoc = gl.getAttribLocation(computeProgram, 'aPosition');
@@ -218,15 +226,7 @@
             const computeDtLoc = gl.getUniformLocation(computeProgram, 'u_dt');
             const computeDLoc = gl.getUniformLocation(computeProgram, 'u_D');
             const computetLoc = gl.getUniformLocation(computeProgram, 'u_t');
-            const computeAttenuateLoc = gl.getUniformLocation(computeProgram, 'u_attenuate');
             
-            // New uniforms for pulse addition
-            const computeAddPulseLoc = gl.getUniformLocation(computeProgram, 'u_addPulse');
-            const computePulsePosLoc = gl.getUniformLocation(computeProgram, 'u_pulsePos');
-            const computePulseAmplitudeLoc = gl.getUniformLocation(computeProgram, 'u_pulseAmplitude');
-            const computePulseSigmaXLoc = gl.getUniformLocation(computeProgram, 'u_pulseSigmaX');
-            const computePulseSigmaYLoc = gl.getUniformLocation(computeProgram, 'u_pulseSigmaY');
-            const computePulsePhiLoc = gl.getUniformLocation(computeProgram, 'u_pulsePhi');
 
             // Get uniform locations for display program
             gl.useProgram(displayProgram);
@@ -240,41 +240,53 @@
             let currentRead = 0;
 
             let frameCount = 0;
-            let pulseEveryNFrames = 20; // Add a pulse every N frames
+            let pulseEveryNFrames = 20;
 
-            // Default pulse parameters for mouse input
-            const mousePulseAmplitude = 0.009;
+            const mousePulseAmplitude = 5;
             const mousePulseSigmaX = 0.5;
             const mousePulseSigmaY = 0.5;
             const mousePulsePhi = 0.0;
+            const attenuation = 0.0005;
 
             function render() {
+                // Advance simulation time by one timestep
                 t = t + dt;
 
+                // ==================== TEXTURE ROTATION SETUP ====================
+                // We use triple buffering with 3 textures that rotate roles each frame:
+                // - readCurrentIndex: holds ψ(t) - the wave field at current time
+                // - readPreviousIndex: holds ψ(t-Δt) - the wave field one timestep ago
+                // - writeNextIndex: will hold ψ(t+Δt) - the wave field we're computing
                 const readCurrentIndex = currentRead;
-                const readPreviousIndex = (currentRead + 1) % 3;
+                const readPreviousIndex = (currentRead + 1) % 3;  // Modulo ensures cycling: 0→1→2→0
                 const writeNextIndex = (currentRead + 2) % 3;
                 
-                const readCurrentTexture = textures[readCurrentIndex];
-                const readPreviousTexture = textures[readPreviousIndex];
+                // Get references to the actual texture objects
+                let readCurrentTexture = textures[readCurrentIndex];
+                let readPreviousTexture = textures[readPreviousIndex];
                 const writeNextFramebuffer = framebuffers[writeNextIndex];
 
-                // Determine if we should add a pulse this frame
+                // ==================== PULSE GENERATION ====================
+                // Determine pulse parameters for this frame
                 let shouldAddPulse = false;
-                let pulseX = 0.5, pulseY = 0.5;
+                let pulseX = 0.5, pulseY = 0.5;  // Default center position
                 let pulseAmp = 1.0, pulseSigX = 1.0, pulseSigY = 1.0, pulsePhi = 0.0;
 
                 frameCount++;
+                
+                // Random pulses at intervals
                 if (frameCount % pulseEveryNFrames === 0) {
                     shouldAddPulse = true;
-                    pulseX = Math.random();
+                    pulseX = Math.random();  // Random position [0,1]
                     pulseY = Math.random();
-                    pulseAmp = Math.random()*0.01;
-                    pulseSigX = Math.random() * 1.6 +0.1;
-                    pulseSigY = Math.random() * 1.3 +0.1;
-                    pulsePhi = Math.acos((Math.random()-0.5)/0.5);
-                    pulseEveryNFrames = Math.floor(Math.random() * 20) + 1;
-                } else if (mouseState.isDown) {
+                    pulseAmp = Math.random() * 5;  // Random amplitude
+                    pulseSigX = Math.random() * 1.6 + 0.1;  // Random width
+                    pulseSigY = pulseSigX;  // Circular pulse
+                    pulsePhi = Math.acos((Math.random() - 0.5) / 0.5);  // Random rotation
+                    pulseEveryNFrames = Math.floor(Math.random() * 40) + 1;  // Vary interval
+                } 
+                // Mouse-driven pulses
+                else if (mouseState.isDown) {
                     shouldAddPulse = true;
                     pulseX = mouseState.normalizedX;
                     pulseY = mouseState.normalizedY;
@@ -284,68 +296,166 @@
                     pulsePhi = mousePulsePhi;
                 }
 
-                // === COMPUTE STEP ===
+                // ==================== SOURCE ADDITION & ATTENUATION ====================
+                // Set amplitude to 0 if no pulse (but still run shader for attenuation)
+                if (!shouldAddPulse) {
+                    pulseAmp = 0.0;
+                }
+                
+                // Switch to the write program (adds sources and applies attenuation)
+                gl.useProgram(writeProgram);
+                
+                // Set all uniforms for the write shader
+                gl.uniform2f(writeResLoc, simWidth, simHeight);
+                gl.uniform1i(writeAddPulseLoc, 1);  // Always enabled (amp=0 means no actual pulse)
+                gl.uniform2f(writePulsePosLoc, pulseX, pulseY);
+                gl.uniform1f(writePulseAmplitudeLoc, pulseAmp);
+                gl.uniform1f(writePulseSigmaXLoc, pulseSigX);
+                gl.uniform1f(writePulseSigmaYLoc, pulseSigY);
+                gl.uniform1f(writePulsePhiLoc, pulsePhi);
+                gl.viewport(0, 0, simWidth, simHeight);
+                gl.activeTexture(gl.TEXTURE0);  // Use texture unit 0
+                gl.uniform1f(computeAttenuateLoc, attenuation);
+
+
+                // Set up vertex buffer (full-screen quad for fragment shader)
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                gl.enableVertexAttribArray(writePosLoc);
+                gl.vertexAttribPointer(writePosLoc, 2, gl.FLOAT, false, 0, 0);
+
+                // --- PASS 1: Modify Current Texture ---
+                // Read from current texture, add pulse + attenuation, write to temporary texture
+                // Why? Can't read from and write to same texture simultaneously in WebGL
+                gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferTmp);
+                gl.uniform1i(writeAddPulseLoc, 1);  // Disable pulse addition (just copy)
+                gl.bindTexture(gl.TEXTURE_2D, readCurrentTexture);  // Bind input texture
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);  // Execute shader for every pixel
+
+                // --- PASS 2: Copy Back to Current ---
+                // Copy modified data from temp back to current texture
+                // This completes the read-modify-write cycle for the current texture
+                gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffers[readCurrentIndex]);
+                gl.uniform1i(writeAddPulseLoc, 0);  // Disable pulse addition (just copy)
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textureTmp);  // Read from temp
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                // --- PASS 3: Modify Previous Texture ---
+                // Same process for the previous texture: read, modify, write to temp
+                gl.uniform1i(writeAddPulseLoc, 1);  // Re-enable pulse addition
+                gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferTmp);
+                gl.bindTexture(gl.TEXTURE_2D, readPreviousTexture);  // Read from previous
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                // --- PASS 4: Copy Back to Previous ---
+                // Complete the read-modify-write cycle for previous texture
+                gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffers[readPreviousIndex]);
+                gl.uniform1i(writeAddPulseLoc, 0);  // Just copy
+                gl.bindTexture(gl.TEXTURE_2D, textureTmp);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                // Update references (textures were modified in place via framebuffers)
+                readCurrentTexture = textures[readCurrentIndex];
+                readPreviousTexture = textures[readPreviousIndex];
+
+                // ==================== WAVE EQUATION COMPUTE ====================
+                // Now both current and previous textures have:
+                // - Attenuation applied
+                // - Source pulse added (if any)
+                // Ready to compute the wave equation: ψ(t+Δt) = f(ψ(t), ψ(t-Δt))
+                
                 gl.bindFramebuffer(gl.FRAMEBUFFER, writeNextFramebuffer);
                 gl.viewport(0, 0, simWidth, simHeight);
-                gl.useProgram(computeProgram);
+                gl.useProgram(computeProgram);  // Switch to wave equation shader
 
+                // Bind both input textures (current and previous)
                 gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, readCurrentTexture);
-                gl.uniform1i(computePsiCurrentLoc, 0);
+                gl.uniform1i(computePsiCurrentLoc, 0);  // Shader reads this as u_psi_current
 
-                gl.activeTexture(gl.TEXTURE1);
+                gl.activeTexture(gl.TEXTURE1);  // Use different texture unit
                 gl.bindTexture(gl.TEXTURE_2D, readPreviousTexture);
-                gl.uniform1i(computePsiPreviousLoc, 1);
+                gl.uniform1i(computePsiPreviousLoc, 1);  // Shader reads this as u_psi_previous
                 
+                // Set wave equation parameters
                 gl.uniform2f(computeResLoc, simWidth, simHeight);
-                gl.uniform1f(computeDtLoc, dt);
-                gl.uniform1f(computeDLoc, D);
-                gl.uniform1f(computetLoc, t);
-                gl.uniform1f(computeAttenuateLoc, 0.01);
-
-                // Set pulse addition uniforms
-                if (shouldAddPulse) {
-                    gl.uniform1i(computeAddPulseLoc, 1);
-                    gl.uniform2f(computePulsePosLoc, pulseX, pulseY);
-                    gl.uniform1f(computePulseAmplitudeLoc, pulseAmp);
-                    gl.uniform1f(computePulseSigmaXLoc, pulseSigX);
-                    gl.uniform1f(computePulseSigmaYLoc, pulseSigY);
-                    gl.uniform1f(computePulsePhiLoc, pulsePhi);
-                } else {
-                    gl.uniform1i(computeAddPulseLoc, 0);
-                }
+                gl.uniform1f(computeDtLoc, dt);  // Time step size
+                gl.uniform1f(computeDLoc, D);    // Wave speed coefficient
+                gl.uniform1f(computetLoc, t);    // Current simulation time
 
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
                 gl.enableVertexAttribArray(computePosLoc);
                 gl.vertexAttribPointer(computePosLoc, 2, gl.FLOAT, false, 0, 0);
 
+                // Execute wave equation for every pixel, writes to writeNextFramebuffer
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-                // === DISPLAY STEP ===
+                // ==================== DISPLAY ====================
+                // Render the newly computed wave field to the screen
+                
                 const displayTexture = textures[writeNextIndex];
 
-                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);  // null = render to screen
                 gl.viewport(0, 0, canvas.width, canvas.height);
-                gl.useProgram(displayProgram);
+                gl.useProgram(displayProgram);  // Switch to display shader
 
                 gl.uniform2f(displayResLoc, canvas.width, canvas.height);
 
                 gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, displayTexture);
+                gl.bindTexture(gl.TEXTURE_2D, displayTexture);  // The newly computed wave field
                 gl.uniform1i(displayPsiLoc, 0);
 
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
                 gl.enableVertexAttribArray(displayPosLoc);
                 gl.vertexAttribPointer(displayPosLoc, 2, gl.FLOAT, false, 0, 0);
 
+                // Clear screen and draw
                 gl.clearColor(0.0, 0.0, 0.0, 1.0);
                 gl.clear(gl.COLOR_BUFFER_BIT);
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
+                // ==================== TEXTURE ROTATION ====================
+                // Advance the rotation: what was "next" becomes "current" for next frame
+                // This avoids copying data - we just change which texture has which role
                 currentRead = writeNextIndex;
 
+                // Schedule next frame
                 requestAnimationFrame(render);
             }
+
+            /* ==================== EFFICIENCY NOTES ====================
+            * 
+            * Q: Is unbinding/rebinding textures inefficient?
+            * A: Relatively speaking, it's very efficient! Here's why:
+            * 
+            * Texture Binding (~microseconds):
+            * - Just updates a pointer/reference in GPU state
+            * - Tells GPU "use this texture for the next operation"
+            * - Almost negligible cost on modern GPUs
+            * 
+            * vs. Texture Upload (milliseconds):
+            * - Copying data from CPU RAM to GPU VRAM
+            * - Involves system bus transfer (PCIe)
+            * - 1000x+ slower than binding
+            * - For a 1920x1080 texture: ~8MB transfer
+            * 
+            * Our Approach (GPU-side only):
+            * 1. All textures live in GPU memory
+            * 2. All computation happens in shaders (GPU)
+            * 3. No CPU↔GPU data transfer per frame
+            * 4. Only binding operations (changing what texture each slot uses)
+            * 
+            * Alternative (would be much slower):
+            * 1. Read texture from GPU to CPU (download)
+            * 2. Modify on CPU
+            * 3. Upload back to GPU
+            * 4. Repeat every frame = disaster for performance
+            * 
+            * The 4-pass write approach is necessary because WebGL 1.0 doesn't allow
+            * reading from and writing to the same texture. The temporary texture
+            * acts as a "scratch space" to work around this limitation. The overhead
+            * is minimal compared to the massive parallelism gained by GPU computation.
+            */
 
             render();
         }
