@@ -86,8 +86,13 @@
             x: 0,
             y: 0,
             normalizedX: 0,  // [0, 1] range
-            normalizedY: 0   // [0, 1] range
+            normalizedY: 0,   // [0, 1] range
+            isTouch: false    // Track if input is from touch
         };
+
+        // Touch stack - stores up to 5 active touch positions
+        let touchStack = [];
+        const MAX_TOUCHES = 5;
 
         // Update position helper function (used by both mouse and touch)
         function updatePosition(canvas, clientX, clientY) {
@@ -104,6 +109,7 @@
         function setupMouseHandlers(canvas) {
             canvas.addEventListener('mousedown', (e) => {
                 mouseState.isDown = true;
+                mouseState.isTouch = false;
                 updatePosition(canvas, e.clientX, e.clientY);
             });
 
@@ -120,32 +126,73 @@
             });
         }
 
-        // Touch event handlers
+        // Touch event handlers with multitouch support
         function setupTouchHandlers(canvas) {
             canvas.addEventListener('touchstart', (e) => {
-                e.preventDefault(); // Prevent scrolling and other default behaviors
-                if (e.touches.length > 0) {
-                    mouseState.isDown = true;
-                    const touch = e.touches[0];
-                    updatePosition(canvas, touch.clientX, touch.clientY);
+                e.preventDefault();
+                mouseState.isTouch = true;
+                
+                // Add all new touches to the stack (up to MAX_TOUCHES)
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const touch = e.changedTouches[i];
+                    
+                    // Check if this touch is already in the stack
+                    if (touchStack.some(t => t.id === touch.identifier)) {
+                        continue;
+                    }
+                    
+                    // Only add if we haven't reached the max
+                    if (touchStack.length < MAX_TOUCHES) {
+                        const rect = canvas.getBoundingClientRect();
+                        const x = touch.clientX - rect.left;
+                        const y = touch.clientY - rect.top;
+                        
+                        touchStack.push({
+                            id: touch.identifier,
+                            normalizedX: x / canvas.width,
+                            normalizedY: 1.0 - (y / canvas.height)
+                        });
+                    }
                 }
+                
+                mouseState.isDown = touchStack.length > 0;
             });
 
             canvas.addEventListener('touchend', (e) => {
                 e.preventDefault();
-                mouseState.isDown = false;
+                
+                // Remove ended touches from stack using changedTouches
+                const endedTouchIds = new Set();
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    endedTouchIds.add(e.changedTouches[i].identifier);
+                }
+                
+                touchStack = touchStack.filter(touch => !endedTouchIds.has(touch.id));
+                mouseState.isDown = touchStack.length > 0;
             });
 
             canvas.addEventListener('touchcancel', (e) => {
                 e.preventDefault();
+                touchStack = [];
                 mouseState.isDown = false;
             });
 
             canvas.addEventListener('touchmove', (e) => {
                 e.preventDefault();
-                if (e.touches.length > 0) {
-                    const touch = e.touches[0];
-                    updatePosition(canvas, touch.clientX, touch.clientY);
+                
+                // Update positions of existing touches in stack
+                for (let i = 0; i < e.touches.length; i++) {
+                    const touch = e.touches[i];
+                    const stackIndex = touchStack.findIndex(t => t.id === touch.identifier);
+                    
+                    if (stackIndex !== -1) {
+                        const rect = canvas.getBoundingClientRect();
+                        const x = touch.clientX - rect.left;
+                        const y = touch.clientY - rect.top;
+                        
+                        touchStack[stackIndex].normalizedX = x / canvas.width;
+                        touchStack[stackIndex].normalizedY = 1.0 - (y / canvas.height);
+                    }
                 }
             });
         }
@@ -171,8 +218,8 @@
                 console.warn('OES_texture_float_linear not supported - filtering may be limited');
             }
             // Simulation resolution
-            const simWidth = Math.floor(window.innerWidth/2);
-            const simHeight = Math.floor(window.innerHeight/2);
+            const simWidth = Math.floor(window.innerWidth/4);
+            const simHeight = Math.floor(window.innerHeight/4);
 
             // Set canvas size
             function resizeCanvas() {
@@ -288,7 +335,7 @@
             const displayResLoc = gl.getUniformLocation(displayProgram, 'u_resolution');
             
             // Simulation parameters
-            const D = 2;  // Diffusion coefficient
+            const D = 17;  // Diffusion coefficient
             dt = 0.01; // Time step (must satisfy stability: dt * D / h^2 <= 0.25)
             
             // Heat pulse parameters
@@ -296,6 +343,7 @@
             const pulseWidth = 10.0;
 
             let currentRead = 0; // 0 or 1 (ping-pong)
+            let currentTouchIndex = 0; // Index for cycling through touch stack
 
             // Render loop
             function render() {
@@ -318,11 +366,31 @@
                 // Set heat addition uniforms
                 if (mouseState.isDown) {
                     gl.uniform1i(computeAddHeatLoc, 1);
-                    gl.uniform2f(computeHeatPosLoc, mouseState.normalizedX, mouseState.normalizedY);
+                    
+                    let heatX, heatY, heatWidth;
+                    
+                    if (mouseState.isTouch && touchStack.length > 0) {
+                        // Use touch from stack and cycle through
+                        const touch = touchStack[currentTouchIndex];
+                        heatX = touch.normalizedX;
+                        heatY = touch.normalizedY;
+                        heatWidth = pulseWidth * 2.0; // Double the Gaussian width for touch
+                        
+                        // Move to next touch in stack, wrap around
+                        currentTouchIndex = (currentTouchIndex + 1) % touchStack.length;
+                    } else {
+                        // Use mouse position
+                        heatX = mouseState.normalizedX;
+                        heatY = mouseState.normalizedY;
+                        heatWidth = pulseWidth; // Normal width for mouse
+                    }
+                    
+                    gl.uniform2f(computeHeatPosLoc, heatX, heatY);
                     gl.uniform1f(computeHeatAmplitudeLoc, pulseAmplitude);
-                    gl.uniform1f(computeHeatWidthLoc, pulseWidth);
+                    gl.uniform1f(computeHeatWidthLoc, heatWidth);
                 } else {
                     gl.uniform1i(computeAddHeatLoc, 0);
+                    currentTouchIndex = 0; // Reset touch index when not touching
                 }
 
                 // Set up attributes
