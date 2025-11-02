@@ -30,6 +30,6 @@ void main() {
     
     //gl_FragColor = vec4(mPos, 1.0,mNeg, 1.0);
     vec3 color;
-    color = vec3(0.05,0.15,0.15) + vec3(0.4,0.4,0.9)* (clamp(mPos,0.0,1.0)) + vec3(0.6,0.4,1)* (clamp(mNeg,0.0,1.0));
+    color = vec3(0.05,0.15,0.15) + vec3(0.2,0.7,0.9)* clamp(mPos*3.0,0.0,1.0)+ vec3(0.6,0.2,0.4)* clamp(mNeg*2.0, 0.0,1.0);
     gl_FragColor = vec4(color, 1.0);
 }

@@ -29,11 +29,6 @@
             return await response.text();
         }
 
-
-
-
-
-
         function compileShader(gl, type, source) {
             const shader = gl.createShader(type);
             gl.shaderSource(shader, source);
@@ -78,8 +73,7 @@
             return fb;
         }
 
-
-                // Mouse state tracking
+        // Mouse state tracking
         let mouseState = {
             isDown: false,
             x: 0,
@@ -118,95 +112,6 @@
             mouseState.normalizedY = 1.0 - (mouseState.y / canvas.height); // Flip Y for WebGL coordinates
         }
 
-        function addGaussianPulse(gl, texture, width, height, normalizedX, normalizedY) {
-            // Create a temporary buffer to read the current texture data
-            const currentData = new Float32Array(width * height * 4);
-            
-            // Bind framebuffer to read from texture
-            const tempFb = gl.createFramebuffer();
-            gl.bindFramebuffer(gl.FRAMEBUFFER, tempFb);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-            
-            gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, currentData);
-            
-            // Clean up temporary framebuffer
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            gl.deleteFramebuffer(tempFb);
-
-            // Convert normalized coordinates to texture coordinates
-            const pulseX = Math.floor(normalizedX * width);
-            const pulseY = Math.floor(normalizedY * height);
-            const pulseAmplitude = 1.0;  //  amount to add
-            const pulseWidth = 1.0;     // Size of the spot
-
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const idx = (y * width + x) * 4;
-                    const dx = x - pulseX;
-                    const dy = y - pulseY;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    const value = pulseAmplitude * Math.exp(-dist * dist / pulseWidth);
-
-                    // Add the heat pulse to the existing data
-                    currentData[idx] += value;     // R
-                    currentData[idx + 1] += value; // G
-                    currentData[idx + 2] += value; // B
-                    // Alpha channel is unchanged
-                }
-            }
-
-            // Update the texture with the combined data
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.FLOAT, currentData);
-        }
-
-        function addRandomGaussianPulse(gl, texture, width, height, x, y, amp, sigx, sigy, phi) {
-            // Create a temporary buffer to read the current texture data
-            const currentData = new Float32Array(width * height * 4);
-            
-            // Bind framebuffer to read from texture
-            const tempFb = gl.createFramebuffer();
-            gl.bindFramebuffer(gl.FRAMEBUFFER, tempFb);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-            
-            gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, currentData);
-            
-            // Clean up temporary framebuffer
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            gl.deleteFramebuffer(tempFb);
-
-            // Convert normalized coordinates to texture coordinates
-            const pulseX = Math.floor(x * width);
-            const pulseY = Math.floor(y * height);
-
-
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const idx = (y * width + x) * 4;
-
-                    
-                    const dx = x - pulseX;
-                    const dy = y - pulseY;
-                    
-                    const dxprime = dx*Math.cos(phi) + dy*Math.sin(phi);
-                    const dyprime = -dx*Math.sin(phi) + dy*Math.cos(phi);
- 
-                    const value = amp * Math.exp(-dxprime* dxprime / (2 *sigx*sigx)  - dyprime * dyprime / (2 *sigy*sigy));
-
-                    // Add the heat pulse to the existing data
-                    currentData[idx] += value;     // R
-                    currentData[idx + 1] += value; // G
-                    currentData[idx + 2] += value; // B
-                    // Alpha channel is unchanged
-                }
-            }
-
-            // Update the texture with the combined data
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.FLOAT, currentData);
-        }
-
-
         async function init() {
             const canvas = document.getElementById('glCanvas');
             const gl = canvas.getContext('webgl');
@@ -230,8 +135,8 @@
                 console.warn('OES_texture_float_linear not supported - filtering may be limited');
             }
 
-            const simWidth = Math.floor(window.innerWidth/2);
-            const simHeight = Math.floor(window.innerHeight/2);
+            const simWidth = Math.floor(window.innerWidth);
+            const simHeight = Math.floor(window.innerHeight);
 
             function resizeCanvas() {
                 canvas.width = window.innerWidth;
@@ -314,6 +219,14 @@
             const computeDLoc = gl.getUniformLocation(computeProgram, 'u_D');
             const computetLoc = gl.getUniformLocation(computeProgram, 'u_t');
             const computeAttenuateLoc = gl.getUniformLocation(computeProgram, 'u_attenuate');
+            
+            // New uniforms for pulse addition
+            const computeAddPulseLoc = gl.getUniformLocation(computeProgram, 'u_addPulse');
+            const computePulsePosLoc = gl.getUniformLocation(computeProgram, 'u_pulsePos');
+            const computePulseAmplitudeLoc = gl.getUniformLocation(computeProgram, 'u_pulseAmplitude');
+            const computePulseSigmaXLoc = gl.getUniformLocation(computeProgram, 'u_pulseSigmaX');
+            const computePulseSigmaYLoc = gl.getUniformLocation(computeProgram, 'u_pulseSigmaY');
+            const computePulsePhiLoc = gl.getUniformLocation(computeProgram, 'u_pulsePhi');
 
             // Get uniform locations for display program
             gl.useProgram(displayProgram);
@@ -321,13 +234,19 @@
             const displayPsiLoc = gl.getUniformLocation(displayProgram, 'u_psi');
             const displayResLoc = gl.getUniformLocation(displayProgram, 'u_resolution');
             
-            const D = 0.075;
+            const D = 0.045;
             const dt = 0.0005;
             let t = 0;
             let currentRead = 0;
 
             let frameCount = 0;
-            let pulseEveryNFrames = 200; // Add a pulse every 60 frames
+            let pulseEveryNFrames = 20; // Add a pulse every N frames
+
+            // Default pulse parameters for mouse input
+            const mousePulseAmplitude = 0.009;
+            const mousePulseSigmaX = 0.5;
+            const mousePulseSigmaY = 0.5;
+            const mousePulsePhi = 0.0;
 
             function render() {
                 t = t + dt;
@@ -340,28 +259,29 @@
                 const readPreviousTexture = textures[readPreviousIndex];
                 const writeNextFramebuffer = framebuffers[writeNextIndex];
 
-                
-                    // === ADD PULSES FIRST (before binding compute framebuffer) ===
+                // Determine if we should add a pulse this frame
+                let shouldAddPulse = false;
+                let pulseX = 0.5, pulseY = 0.5;
+                let pulseAmp = 1.0, pulseSigX = 1.0, pulseSigY = 1.0, pulsePhi = 0.0;
+
                 frameCount++;
                 if (frameCount % pulseEveryNFrames === 0) {
-                    let x = Math.random();
-                    let y = Math.random();
-                    let amp = Math.random();
-                    let sigma = Math.random();
-                    let phi = 0.9;
-                    let sigx = Math.random()*3+0.1;
-                    let sigy = Math.random()*3+0.1;
-
-                    addRandomGaussianPulse(gl, textures[readCurrentIndex], simWidth, simHeight, x, y, amp, sigx,sigy, phi);
-                    addRandomGaussianPulse(gl, textures[readPreviousIndex], simWidth, simHeight, x, y,amp, sigx,sigy, phi);
-                    pulseEveryNFrames = Math.floor(Math.random() * 80) + 1;
-                }
-
-                if (mouseState.isDown) {
-                    addGaussianPulse(gl, textures[readCurrentIndex], simWidth, simHeight, 
-                                    mouseState.normalizedX, mouseState.normalizedY);
-                    addGaussianPulse(gl, textures[readPreviousIndex], simWidth, simHeight, 
-                                    mouseState.normalizedX, mouseState.normalizedY);
+                    shouldAddPulse = true;
+                    pulseX = Math.random();
+                    pulseY = Math.random();
+                    pulseAmp = Math.random()*0.01;
+                    pulseSigX = Math.random() * 1.6 +0.1;
+                    pulseSigY = Math.random() * 1.3 +0.1;
+                    pulsePhi = Math.acos((Math.random()-0.5)/0.5);
+                    pulseEveryNFrames = Math.floor(Math.random() * 20) + 1;
+                } else if (mouseState.isDown) {
+                    shouldAddPulse = true;
+                    pulseX = mouseState.normalizedX;
+                    pulseY = mouseState.normalizedY;
+                    pulseAmp = mousePulseAmplitude;
+                    pulseSigX = mousePulseSigmaX;
+                    pulseSigY = mousePulseSigmaY;
+                    pulsePhi = mousePulsePhi;
                 }
 
                 // === COMPUTE STEP ===
@@ -369,8 +289,6 @@
                 gl.viewport(0, 0, simWidth, simHeight);
                 gl.useProgram(computeProgram);
 
-
-                
                 gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, readCurrentTexture);
                 gl.uniform1i(computePsiCurrentLoc, 0);
@@ -383,7 +301,19 @@
                 gl.uniform1f(computeDtLoc, dt);
                 gl.uniform1f(computeDLoc, D);
                 gl.uniform1f(computetLoc, t);
-                gl.uniform1f(computeAttenuateLoc, 0.002);
+                gl.uniform1f(computeAttenuateLoc, 0.01);
+
+                // Set pulse addition uniforms
+                if (shouldAddPulse) {
+                    gl.uniform1i(computeAddPulseLoc, 1);
+                    gl.uniform2f(computePulsePosLoc, pulseX, pulseY);
+                    gl.uniform1f(computePulseAmplitudeLoc, pulseAmp);
+                    gl.uniform1f(computePulseSigmaXLoc, pulseSigX);
+                    gl.uniform1f(computePulseSigmaYLoc, pulseSigY);
+                    gl.uniform1f(computePulsePhiLoc, pulsePhi);
+                } else {
+                    gl.uniform1i(computeAddPulseLoc, 0);
+                }
 
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
                 gl.enableVertexAttribArray(computePosLoc);
@@ -391,14 +321,8 @@
 
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-
-               
-
-
                 // === DISPLAY STEP ===
                 const displayTexture = textures[writeNextIndex];
-
-
 
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
                 gl.viewport(0, 0, canvas.width, canvas.height);
