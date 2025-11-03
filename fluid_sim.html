@@ -84,8 +84,8 @@
                 return;
             }
 
-            const simWidth = Math.floor(window.innerWidth/4);
-            const simHeight = Math.floor(window.innerHeight/4);
+            const simWidth = Math.floor(window.innerWidth/2);
+            const simHeight = Math.floor(window.innerHeight/2);
 
             function resizeCanvas() {
                 canvas.width = window.innerWidth;
@@ -133,8 +133,8 @@
                     // Gaussian pulse - now can be any float value
                     let phi = Math.atan2(dy,dx);
 
-                    initialData[idx] = -Math.random()*b*r*Math.sin(phi)*(1/(r + 2.0))*10;
-                    initialData[idx + 1] = Math.random()*b*r*Math.cos(phi)*(1/(r + 2.0))*5;
+                    initialData[idx] = -Math.random()*b*r*Math.sin(phi)*(1/(r + 2.0))*0;
+                    initialData[idx + 1] = Math.random()*b*r*Math.cos(phi)*(1/(r + 2.0))*0;
 
                     initialData[idx + 2] = 1.0;
                     initialData[idx + 3] = 0.0;
@@ -179,71 +179,64 @@
             const displayResLoc = gl.getUniformLocation(displayProgram, 'resolution');
             
             const D = 0.045;
-            const dt = 0.15;
+            const dt = 0.1;
             let t = 0;
             let currentRead = 0;
 
             function render() {
                 t = t + dt;
 
-                // ==================== TRIPLE BUFFER ROTATION ====================
-                // We use 3 textures that rotate roles each frame:
-                // - readCurrentTexture: state at time t (read-only input)
-                // - readPreviousTexture: state at time t-1 (read-only input)
-                // - writeNextFramebuffer: where we write state at time t+1 (output)
-                //
-                // After rendering, we rotate: next becomes current for the next frame
-                // This avoids copying texture data - we just reassign which texture has which role
+                // ==================== MULTIPLE SUBSTEPS ====================
+                const numSubsteps = 20;  // Number of simulation steps per frame
                 
-                const readCurrentIndex = currentRead;
-                const readPreviousIndex = (currentRead + 1) % 3;
-                const writeNextIndex = (currentRead + 2) % 3;
-                
-                let readCurrentTexture = textures[readCurrentIndex];
-                let readPreviousTexture = textures[readPreviousIndex];
-                const writeNextFramebuffer = framebuffers[writeNextIndex];
+                for (let substep = 0; substep < numSubsteps; substep++) {
+                    // Calculate buffer indices for this substep
+                    const readCurrentIndex = currentRead;
+                    const readPreviousIndex = (currentRead + 1) % 3;
+                    const writeNextIndex = (currentRead + 2) % 3;
+                    
+                    const readCurrentTexture = textures[readCurrentIndex];
+                    const readPreviousTexture = textures[readPreviousIndex];
+                    const writeNextFramebuffer = framebuffers[writeNextIndex];
 
-                // ==================== COMPUTE PASS ====================
-                // Render to offscreen framebuffer to compute next state
-                
-                gl.bindFramebuffer(gl.FRAMEBUFFER, writeNextFramebuffer);
-                gl.viewport(0, 0, simWidth, simHeight);
-                gl.useProgram(computeProgram);
+                    // ==================== COMPUTE PASS ====================
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, writeNextFramebuffer);
+                    gl.viewport(0, 0, simWidth, simHeight);
+                    gl.useProgram(computeProgram);
 
-                // Bind input textures as read-only samplers
-                gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, readCurrentTexture);
-                gl.uniform1i(computeFieldCurrentLoc, 0);
+                    // Bind input textures
+                    gl.activeTexture(gl.TEXTURE0);
+                    gl.bindTexture(gl.TEXTURE_2D, readCurrentTexture);
+                    gl.uniform1i(computeFieldCurrentLoc, 0);
 
-                gl.activeTexture(gl.TEXTURE1);
-                gl.bindTexture(gl.TEXTURE_2D, readPreviousTexture);
-                gl.uniform1i(computeFieldPreviousLoc, 1);
-                
-                // Set compute shader uniforms
-                // Add any additional uniform updates here (e.g., mouse input, forcing)
-                gl.uniform2f(computeResLoc, simWidth, simHeight);
-                gl.uniform1f(computeDtLoc, dt);
-                gl.uniform1f(computeDLoc, D);
-                gl.uniform1f(computetLoc, t);
+                    gl.activeTexture(gl.TEXTURE1);
+                    gl.bindTexture(gl.TEXTURE_2D, readPreviousTexture);
+                    gl.uniform1i(computeFieldPreviousLoc, 1);
+                    
+                    // CRITICAL: Divide dt by numSubsteps for each substep!
+                    gl.uniform2f(computeResLoc, simWidth, simHeight);
+                    gl.uniform1f(computeDtLoc, dt / numSubsteps);  
+                    gl.uniform1f(computeDLoc, D);
+                    gl.uniform1f(computetLoc, t + substep * dt / numSubsteps);
 
-                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-                gl.enableVertexAttribArray(computePosLoc);
-                gl.vertexAttribPointer(computePosLoc, 2, gl.FLOAT, false, 0, 0);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                    gl.enableVertexAttribArray(computePosLoc);
+                    gl.vertexAttribPointer(computePosLoc, 2, gl.FLOAT, false, 0, 0);
 
-                // Execute compute shader - writes to writeNextFramebuffer
-                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                    // Rotate to next buffer for the next substep
+                    currentRead = writeNextIndex;
+                }
 
                 // ==================== DISPLAY PASS ====================
-                // Render to screen to visualize the computed state
-                
-                const displayTexture = textures[writeNextIndex];
+                // Display the result of the last substep
+                const displayTexture = textures[currentRead];
 
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
                 gl.viewport(0, 0, canvas.width, canvas.height);
                 gl.useProgram(displayProgram);
 
-                // Set display shader uniforms
-                // Add any additional uniform updates here (e.g., color scale, visualization mode)
                 gl.uniform2f(displayResLoc, canvas.width, canvas.height);
 
                 gl.activeTexture(gl.TEXTURE0);
@@ -257,11 +250,6 @@
                 gl.clearColor(0.0, 0.0, 0.0, 1.0);
                 gl.clear(gl.COLOR_BUFFER_BIT);
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-                // ==================== ADVANCE BUFFER ROTATION ====================
-                // The texture we just wrote becomes the "current" texture for next frame
-                // Flow: writeNext (t+1) → readCurrent (t) → readPrevious (t-1) → writeNext (t+2)
-                currentRead = writeNextIndex;
 
                 requestAnimationFrame(render);
             }
