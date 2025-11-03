@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>2D Wave Equation Solver</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+    <script>
+        async function loadShaderSource(url) {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Failed to load shader: ${url}`);
+            }
+            return await response.text();
+        }
+
+        function compileShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program linking error:', gl.getProgramInfoLog(program));
+                return null;
+            }
+            return program;
+        }
+
+        function createTexture(gl, width, height, data = null) {
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.FLOAT, data);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            return texture;
+        }
+
+        function createFramebuffer(gl, texture) {
+            const fb = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+            return fb;
+        }
+
+        async function init() {
+            const canvas = document.getElementById('glCanvas');
+            const gl = canvas.getContext('webgl');
+
+            if (!gl) {
+                console.error('WebGL not supported');
+                return;
+            }
+
+            const floatExt = gl.getExtension('OES_texture_float');
+            if (!floatExt) {
+                console.error('OES_texture_float extension not supported');
+                alert('Your browser does not support floating point textures.');
+                return;
+            }
+
+            const simWidth = Math.floor(window.innerWidth/4);
+            const simHeight = Math.floor(window.innerHeight/4);
+
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            let vsSource, writeSource, computeSource, displaySource;
+            try {
+                vsSource = await loadShaderSource("vertex.glsl");
+                writeSource = await loadShaderSource("write_texture.glsl");
+                computeSource = await loadShaderSource("compute_fluid.glsl");
+                displaySource = await loadShaderSource("display_fluid.glsl");
+            } catch (error) {
+                console.error("Error loading shaders:", error);
+                return;
+            }
+
+            const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+            const writeFragShader = compileShader(gl, gl.FRAGMENT_SHADER, writeSource);
+            const computeFragShader = compileShader(gl, gl.FRAGMENT_SHADER, computeSource);
+            const displayFragShader = compileShader(gl, gl.FRAGMENT_SHADER, displaySource);
+
+            if (!vertexShader || !writeFragShader || !computeFragShader || !displayFragShader) {
+                console.error("Shader compilation failed!");
+                return;
+            }
+
+            const computeProgram = createProgram(gl, vertexShader, computeFragShader);
+            const displayProgram = createProgram(gl, vertexShader, displayFragShader);
+
+            const initialData = new Float32Array(simWidth * simHeight * 4);
+            for (let y = 0; y < simHeight; y++) {
+                for (let x = 0; x < simWidth; x++) {
+                    const idx = (y * simWidth + x) * 4;
+                    let dx = x - simWidth/2;
+                    let dy = y - simHeight/2;
+                    let r = Math.sqrt(dx*dx + dy*dy);
+
+                    let b = 0.0;
+                    if (Math.abs(r)<100.0){
+                        b = 1.0;
+                    }
+                    // Gaussian pulse - now can be any float value
+                    let phi = Math.atan2(dy,dx);
+
+                    initialData[idx] = -Math.random()*b*r*Math.sin(phi)*(1/(r + 2.0))*10;
+                    initialData[idx + 1] = Math.random()*b*r*Math.cos(phi)*(1/(r + 2.0))*5;
+
+                    initialData[idx + 2] = 1.0;
+                    initialData[idx + 3] = 0.0;
+                }
+            }
+            
+            const texture0 = createTexture(gl, simWidth, simHeight, initialData);
+            const texture1 = createTexture(gl, simWidth, simHeight, null);
+            const texture2 = createTexture(gl, simWidth, simHeight, null);
+
+            const framebuffer0 = createFramebuffer(gl, texture0);
+            const framebuffer1 = createFramebuffer(gl, texture1);
+            const framebuffer2 = createFramebuffer(gl, texture2);
+            
+            const textures = [texture0, texture1, texture2];
+            const framebuffers = [framebuffer0, framebuffer1, framebuffer2];
+
+            const vertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+            const vertexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+            // ==================== COMPUTE SHADER UNIFORMS ====================
+            // Get uniform locations for the compute shader
+            // Add any custom uniforms here (e.g., mouse position, forcing terms, etc.)
+            gl.useProgram(computeProgram);
+            const computePosLoc = gl.getAttribLocation(computeProgram, 'aPosition');
+            const computeFieldCurrentLoc = gl.getUniformLocation(computeProgram, 'fields_current');
+            const computeFieldPreviousLoc = gl.getUniformLocation(computeProgram, 'fields_previous');
+            const computeResLoc = gl.getUniformLocation(computeProgram, 'resolution');
+            const computeDtLoc = gl.getUniformLocation(computeProgram, 'dt');
+            const computeDLoc = gl.getUniformLocation(computeProgram, 'D');
+            const computetLoc = gl.getUniformLocation(computeProgram, 't');
+
+            
+            // ==================== DISPLAY SHADER UNIFORMS ====================
+            // Get uniform locations for the display shader
+            // Add any custom uniforms here (e.g., color mapping parameters, etc.)
+            gl.useProgram(displayProgram);
+            const displayPosLoc = gl.getAttribLocation(displayProgram, 'aPosition');
+            const displayFieldLoc = gl.getUniformLocation(displayProgram, 'fields_current');
+            const displayResLoc = gl.getUniformLocation(displayProgram, 'resolution');
+            
+            const D = 0.045;
+            const dt = 0.15;
+            let t = 0;
+            let currentRead = 0;
+
+            function render() {
+                t = t + dt;
+
+                // ==================== TRIPLE BUFFER ROTATION ====================
+                // We use 3 textures that rotate roles each frame:
+                // - readCurrentTexture: state at time t (read-only input)
+                // - readPreviousTexture: state at time t-1 (read-only input)
+                // - writeNextFramebuffer: where we write state at time t+1 (output)
+                //
+                // After rendering, we rotate: next becomes current for the next frame
+                // This avoids copying texture data - we just reassign which texture has which role
+                
+                const readCurrentIndex = currentRead;
+                const readPreviousIndex = (currentRead + 1) % 3;
+                const writeNextIndex = (currentRead + 2) % 3;
+                
+                let readCurrentTexture = textures[readCurrentIndex];
+                let readPreviousTexture = textures[readPreviousIndex];
+                const writeNextFramebuffer = framebuffers[writeNextIndex];
+
+                // ==================== COMPUTE PASS ====================
+                // Render to offscreen framebuffer to compute next state
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER, writeNextFramebuffer);
+                gl.viewport(0, 0, simWidth, simHeight);
+                gl.useProgram(computeProgram);
+
+                // Bind input textures as read-only samplers
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, readCurrentTexture);
+                gl.uniform1i(computeFieldCurrentLoc, 0);
+
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, readPreviousTexture);
+                gl.uniform1i(computeFieldPreviousLoc, 1);
+                
+                // Set compute shader uniforms
+                // Add any additional uniform updates here (e.g., mouse input, forcing)
+                gl.uniform2f(computeResLoc, simWidth, simHeight);
+                gl.uniform1f(computeDtLoc, dt);
+                gl.uniform1f(computeDLoc, D);
+                gl.uniform1f(computetLoc, t);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                gl.enableVertexAttribArray(computePosLoc);
+                gl.vertexAttribPointer(computePosLoc, 2, gl.FLOAT, false, 0, 0);
+
+                // Execute compute shader - writes to writeNextFramebuffer
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                // ==================== DISPLAY PASS ====================
+                // Render to screen to visualize the computed state
+                
+                const displayTexture = textures[writeNextIndex];
+
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.viewport(0, 0, canvas.width, canvas.height);
+                gl.useProgram(displayProgram);
+
+                // Set display shader uniforms
+                // Add any additional uniform updates here (e.g., color scale, visualization mode)
+                gl.uniform2f(displayResLoc, canvas.width, canvas.height);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, displayTexture);
+                gl.uniform1i(displayFieldLoc, 0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                gl.enableVertexAttribArray(displayPosLoc);
+                gl.vertexAttribPointer(displayPosLoc, 2, gl.FLOAT, false, 0, 0);
+
+                gl.clearColor(0.0, 0.0, 0.0, 1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                // ==================== ADVANCE BUFFER ROTATION ====================
+                // The texture we just wrote becomes the "current" texture for next frame
+                // Flow: writeNext (t+1) → readCurrent (t) → readPrevious (t-1) → writeNext (t+2)
+                currentRead = writeNextIndex;
+
+                requestAnimationFrame(render);
+            }
+
+            render();
+        }
+
+        init().catch(error => {
+            console.error("Initialization error:", error);
+        });
+    </script>
+</body>
+</html>
