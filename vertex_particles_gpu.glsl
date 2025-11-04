@@ -1,3 +1,6 @@
+precision highp float;
+
+
 attribute vec2 aPosition;      // Quad vertices (shared)
 attribute float aInstanceID;   // Instance ID for each particle
 
@@ -7,6 +10,8 @@ uniform vec2 resolution;
 uniform vec2 particleTexSize;   // Size of particle position texture
 uniform float particleSize;
 uniform sampler2D particlePositions;  // Texture containing particle positions
+
+varying float vInstanceID; 
 
 void main() {
     // Calculate UV for this particle in the position texture
@@ -31,6 +36,8 @@ void main() {
     
     gl_Position = vec4(pos, 0.0, 1.0);
     
+    vInstanceID = aInstanceID; // push through the instance id to the particle compute shader
+
     // Texture coordinates for the sprite
     vTexCoord = aPosition * 0.5 + 0.5;
 }

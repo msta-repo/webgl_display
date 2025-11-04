@@ -13,10 +13,37 @@
             width: 100vw;
             height: 100vh;
         }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            font-family: monospace;
+            border-radius: 5px;
+        }
+        #controls label {
+            display: block;
+            margin: 8px 0;
+        }
+        #controls input[type="range"] {
+            width: 200px;
+        }
     </style>
 </head>
 <body>
     <canvas id="glCanvas"></canvas>
+    <div id="controls">
+        <label>
+            Particles: <span id="particleCountDisplay">2048</span>
+            <input type="range" id="particleCount" min="256" max="8192" step="256" value="2048">
+        </label>
+        <label>
+            Trail Fade: <span id="trailFadeDisplay">0.98</span>
+            <input type="range" id="trailFade" min="0.90" max="0.995" step="0.005" value="0.98">
+        </label>
+    </div>
     <script>
         async function loadShaderSource(url) {
             const response = await fetch(url);
@@ -111,6 +138,7 @@
 
             let vsSource, writeSource, computeSource, displaySource;
             let particleComputeSource, particleVsSource;
+            let fadeTrailSource, displayCompositeSource;
             try {
                 vsSource = await loadShaderSource("vertex.glsl");
                 writeSource = await loadShaderSource("write_texture.glsl");
@@ -118,6 +146,8 @@
                 displaySource = await loadShaderSource("display_fluid.glsl");
                 particleComputeSource = await loadShaderSource("compute_particles.glsl");
                 particleVsSource = await loadShaderSource("vertex_particles_gpu.glsl");
+                fadeTrailSource = await loadShaderSource("fade_trail.glsl");
+                displayCompositeSource = await loadShaderSource("display_composite.glsl");
             } catch (error) {
                 console.error("Error loading shaders:", error);
                 return;
@@ -129,25 +159,38 @@
             const displayFragShader = compileShader(gl, gl.FRAGMENT_SHADER, displaySource);
             const particleComputeFragShader = compileShader(gl, gl.FRAGMENT_SHADER, particleComputeSource);
             const particleVertexShader = compileShader(gl, gl.VERTEX_SHADER, particleVsSource);
+            const fadeTrailFragShader = compileShader(gl, gl.FRAGMENT_SHADER, fadeTrailSource);
+            const displayCompositeFragShader = compileShader(gl, gl.FRAGMENT_SHADER, displayCompositeSource);
 
             // Simple particle fragment shader
             const particleFsSource = `
                 precision mediump float;
                 varying vec2 vTexCoord;
-                
+                varying float vInstanceID;
+
+                uniform float t;
+                // Random function - MUST be before main()
+                float random(float seed) {
+                    return fract(sin(seed * 12.9898) * 43758.5453);
+                }
+
                 void main() {
                     vec2 center = vec2(0.5);
                     float dist = distance(vTexCoord, center);
                     float alpha = smoothstep(0.5, 0.1, dist);
                     
-                    vec3 color = vec3(1.0, 0.8, 0.3);
-                    gl_FragColor = vec4(color, alpha * 0.8);
+                    float sparkle = random(vInstanceID + t * 1.9);
+
+
+                    vec3 color = vec3(255.0, 200.0,14.0) / 255.0*sparkle;
+                    gl_FragColor = vec4(color*0.04, alpha * 0.8);
                 }
             `;
             const particleFragShader = compileShader(gl, gl.FRAGMENT_SHADER, particleFsSource);
 
             if (!vertexShader || !writeFragShader || !computeFragShader || !displayFragShader || 
-                !particleComputeFragShader || !particleVertexShader || !particleFragShader) {
+                !particleComputeFragShader || !particleVertexShader || !particleFragShader ||
+                !fadeTrailFragShader || !displayCompositeFragShader) {
                 console.error("Shader compilation failed!");
                 return;
             }
@@ -156,6 +199,8 @@
             const displayProgram = createProgram(gl, vertexShader, displayFragShader);
             const particleComputeProgram = createProgram(gl, vertexShader, particleComputeFragShader);
             const particleRenderProgram = createProgram(gl, particleVertexShader, particleFragShader);
+            const fadeTrailProgram = createProgram(gl, vertexShader, fadeTrailFragShader);
+            const displayCompositeProgram = createProgram(gl, vertexShader, displayCompositeFragShader);
 
             // Initialize fluid field
             const initialData = new Float32Array(simWidth * simHeight * 4);
@@ -196,29 +241,47 @@
             gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
             // ==================== PARTICLE SETUP ====================
-            const PARTICLE_TEX_WIDTH = 64;
-            const PARTICLE_TEX_HEIGHT = 32;
-            const PARTICLE_COUNT = PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT; // 2048
+            // Get initial particle count from UI
+            let PARTICLE_COUNT = parseInt(document.getElementById('particleCount').value);
+            let PARTICLE_TEX_WIDTH = 64;
+            let PARTICLE_TEX_HEIGHT = Math.ceil(PARTICLE_COUNT / PARTICLE_TEX_WIDTH);
+            PARTICLE_COUNT = PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT; // Adjust to fit texture
             
-            // Initialize particle positions
-            const particleInitialData = new Float32Array(PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT * 4);
-            for (let i = 0; i < PARTICLE_COUNT; i++) {
-                particleInitialData[i * 4] = (Math.random() - 0.5) * 2;     // X
-                particleInitialData[i * 4 + 1] = (Math.random() - 0.5) * 2; // Y
-                particleInitialData[i * 4 + 2] = 0.0;
-                particleInitialData[i * 4 + 3] = 1.0;
+            function initializeParticles() {
+                // Initialize particle positions
+                const particleInitialData = new Float32Array(PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT * 4);
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    particleInitialData[i * 4] = (Math.random() - 0.5) * 2;     // X
+                    particleInitialData[i * 4 + 1] = (Math.random() - 0.5) * 2; // Y
+                    particleInitialData[i * 4 + 2] = 0.0;
+                    particleInitialData[i * 4 + 3] = 1.0;
+                }
+                return particleInitialData;
             }
             
+            let particleInitialData = initializeParticles();
+            
             // Particle position textures (ping-pong)
-            const particleTex0 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, particleInitialData);
-            const particleTex1 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, null);
+            let particleTex0 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, particleInitialData);
+            let particleTex1 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, null);
             
-            const particleFb0 = createFramebuffer(gl, particleTex0);
-            const particleFb1 = createFramebuffer(gl, particleTex1);
+            let particleFb0 = createFramebuffer(gl, particleTex0);
+            let particleFb1 = createFramebuffer(gl, particleTex1);
             
-            const particleTextures = [particleTex0, particleTex1];
-            const particleFramebuffers = [particleFb0, particleFb1];
+            let particleTextures = [particleTex0, particleTex1];
+            let particleFramebuffers = [particleFb0, particleFb1];
             let currentParticleRead = 0;
+            
+            // Trail textures (ping-pong)
+            const trailTex0 = createTexture(gl, canvas.width, canvas.height, null);
+            const trailTex1 = createTexture(gl, canvas.width, canvas.height, null);
+            
+            const trailFb0 = createFramebuffer(gl, trailTex0);
+            const trailFb1 = createFramebuffer(gl, trailTex1);
+            
+            const trailTextures = [trailTex0, trailTex1];
+            const trailFramebuffers = [trailFb0, trailFb1];
+            let currentTrailRead = 0;
             
             // Quad for particle sprite
             const particleQuad = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
@@ -227,11 +290,16 @@
             gl.bufferData(gl.ARRAY_BUFFER, particleQuad, gl.STATIC_DRAW);
             
             // Instance IDs (0, 1, 2, ..., PARTICLE_COUNT-1)
-            const instanceIDs = new Float32Array(PARTICLE_COUNT);
-            for (let i = 0; i < PARTICLE_COUNT; i++) {
-                instanceIDs[i] = i;
+            function createInstanceIDs(count) {
+                const ids = new Float32Array(count);
+                for (let i = 0; i < count; i++) {
+                    ids[i] = i;
+                }
+                return ids;
             }
-            const instanceIDBuffer = gl.createBuffer();
+            
+            let instanceIDs = createInstanceIDs(PARTICLE_COUNT);
+            let instanceIDBuffer = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, instanceIDBuffer);
             gl.bufferData(gl.ARRAY_BUFFER, instanceIDs, gl.STATIC_DRAW);
 
@@ -259,7 +327,8 @@
             const particleComputeVelocityLoc = gl.getUniformLocation(particleComputeProgram, 'velocityField');
             const particleComputeTexSizeLoc = gl.getUniformLocation(particleComputeProgram, 'particleTexSize');
             const particleComputeDtLoc = gl.getUniformLocation(particleComputeProgram, 'dt');
-            
+            const particleComputetLoc = gl.getUniformLocation(particleComputeProgram, 't')
+
             // Particle render
             gl.useProgram(particleRenderProgram);
             const particleQuadLoc = gl.getAttribLocation(particleRenderProgram, 'aPosition');
@@ -269,16 +338,73 @@
             const particleTexSizeLoc = gl.getUniformLocation(particleRenderProgram, 'particleTexSize');
             const particleSizeLoc = gl.getUniformLocation(particleRenderProgram, 'particleSize');
             
+            // Fade trail
+            gl.useProgram(fadeTrailProgram);
+            const fadeTrailPosLoc = gl.getAttribLocation(fadeTrailProgram, 'aPosition');
+            const fadeTrailPrevLoc = gl.getUniformLocation(fadeTrailProgram, 'previousTrail');
+            const fadeTrailResLoc = gl.getUniformLocation(fadeTrailProgram, 'resolution');
+            const fadeTrailAmountLoc = gl.getUniformLocation(fadeTrailProgram, 'fadeAmount');
+            
+            // Composite display
+            gl.useProgram(displayCompositeProgram);
+            const compositePosLoc = gl.getAttribLocation(displayCompositeProgram, 'aPosition');
+            const compositeFluidLoc = gl.getUniformLocation(displayCompositeProgram, 'fluidTexture');
+            const compositeTrailLoc = gl.getUniformLocation(displayCompositeProgram, 'trailTexture');
+            const compositeResLoc = gl.getUniformLocation(displayCompositeProgram, 'resolution');
+            
             const D = 0.045;
-            const dt = 0.1;
+            const dt = 0.2;
             let t = 0;
             let currentRead = 0;
+            
+            // Trail parameters
+            let trailFade = parseFloat(document.getElementById('trailFade').value);
+            
+            // UI Controls
+            document.getElementById('particleCount').addEventListener('input', (e) => {
+                const newCount = parseInt(e.target.value);
+                document.getElementById('particleCountDisplay').textContent = newCount;
+                
+                // Reinitialize particles
+                PARTICLE_COUNT = newCount;
+                PARTICLE_TEX_HEIGHT = Math.ceil(PARTICLE_COUNT / PARTICLE_TEX_WIDTH);
+                PARTICLE_COUNT = PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT;
+                
+                particleInitialData = initializeParticles();
+                
+                // Delete old textures and framebuffers
+                gl.deleteTexture(particleTextures[0]);
+                gl.deleteTexture(particleTextures[1]);
+                gl.deleteFramebuffer(particleFramebuffers[0]);
+                gl.deleteFramebuffer(particleFramebuffers[1]);
+                
+                // Create new ones
+                particleTex0 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, particleInitialData);
+                particleTex1 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, null);
+                particleFb0 = createFramebuffer(gl, particleTex0);
+                particleFb1 = createFramebuffer(gl, particleTex1);
+                particleTextures[0] = particleTex0;
+                particleTextures[1] = particleTex1;
+                particleFramebuffers[0] = particleFb0;
+                particleFramebuffers[1] = particleFb1;
+                currentParticleRead = 0;
+                
+                // Update instance IDs
+                instanceIDs = createInstanceIDs(PARTICLE_COUNT);
+                gl.bindBuffer(gl.ARRAY_BUFFER, instanceIDBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, instanceIDs, gl.STATIC_DRAW);
+            });
+            
+            document.getElementById('trailFade').addEventListener('input', (e) => {
+                trailFade = parseFloat(e.target.value);
+                document.getElementById('trailFadeDisplay').textContent = trailFade.toFixed(3);
+            });
 
             function render() {
                 t = t + dt;
 
                 // ==================== FLUID COMPUTE ====================
-                const numSubsteps = 20;
+                const numSubsteps = 2;
                 
                 for (let substep = 0; substep < numSubsteps; substep++) {
                     const readCurrentIndex = currentRead;
@@ -336,7 +462,8 @@
                 
                 gl.uniform2f(particleComputeTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
                 gl.uniform1f(particleComputeDtLoc, dt);
-                
+                gl.uniform1f(particleComputetLoc, t);
+
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
                 gl.enableVertexAttribArray(particleComputePosLoc);
                 gl.vertexAttribPointer(particleComputePosLoc, 2, gl.FLOAT, false, 0, 0);
@@ -346,33 +473,35 @@
                 // Swap particle buffers
                 currentParticleRead = 1 - currentParticleRead;
 
-                // ==================== FLUID DISPLAY ====================
-                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                // ==================== TRAIL FADE PASS ====================
+                const readTrailTexture = trailTextures[currentTrailRead];
+                const writeTrailFramebuffer = trailFramebuffers[1 - currentTrailRead];
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER, writeTrailFramebuffer);
                 gl.viewport(0, 0, canvas.width, canvas.height);
-                gl.useProgram(displayProgram);
-
-                gl.uniform2f(displayResLoc, canvas.width, canvas.height);
-
+                gl.useProgram(fadeTrailProgram);
+                
                 gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, currentFluidTexture);
-                gl.uniform1i(displayFieldLoc, 0);
-
+                gl.bindTexture(gl.TEXTURE_2D, readTrailTexture);
+                gl.uniform1i(fadeTrailPrevLoc, 0);
+                gl.uniform2f(fadeTrailResLoc, canvas.width, canvas.height);
+                gl.uniform1f(fadeTrailAmountLoc, trailFade);
+                
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-                gl.enableVertexAttribArray(displayPosLoc);
-                gl.vertexAttribPointer(displayPosLoc, 2, gl.FLOAT, false, 0, 0);
-
-                gl.clearColor(0.0, 0.0, 0.0, 1.0);
-                gl.clear(gl.COLOR_BUFFER_BIT);
+                gl.enableVertexAttribArray(fadeTrailPosLoc);
+                gl.vertexAttribPointer(fadeTrailPosLoc, 2, gl.FLOAT, false, 0, 0);
+                
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-                // ==================== PARTICLE RENDER ====================
+                
+                // ==================== DRAW PARTICLES TO TRAIL ====================
+                // Now draw particles on top with additive blending
                 gl.enable(gl.BLEND);
-                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+                gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive blending
                 
                 gl.useProgram(particleRenderProgram);
                 gl.uniform2f(particleResLoc, canvas.width, canvas.height);
                 gl.uniform2f(particleTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
-                gl.uniform1f(particleSizeLoc, 0.01);
+                gl.uniform1f(particleSizeLoc, 0.004);
                 
                 // Bind particle position texture
                 gl.activeTexture(gl.TEXTURE0);
@@ -390,11 +519,39 @@
                 gl.vertexAttribPointer(particleInstanceIDLoc, 1, gl.FLOAT, false, 0, 0);
                 instancingExt.vertexAttribDivisorANGLE(particleInstanceIDLoc, 1);
                 
-                // Draw all particles
+                // Draw all particles to trail
                 instancingExt.drawArraysInstancedANGLE(gl.TRIANGLE_STRIP, 0, 4, PARTICLE_COUNT);
                 
                 instancingExt.vertexAttribDivisorANGLE(particleInstanceIDLoc, 0);
                 gl.disable(gl.BLEND);
+                
+                // Swap trail buffers
+                currentTrailRead = 1 - currentTrailRead;
+
+                // ==================== COMPOSITE DISPLAY ====================
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.viewport(0, 0, canvas.width, canvas.height);
+                gl.useProgram(displayCompositeProgram);
+                
+                gl.uniform2f(compositeResLoc, canvas.width, canvas.height);
+                
+                // Bind fluid texture
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, currentFluidTexture);
+                gl.uniform1i(compositeFluidLoc, 0);
+                
+                // Bind trail texture
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, trailTextures[currentTrailRead]);
+                gl.uniform1i(compositeTrailLoc, 1);
+                
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                gl.enableVertexAttribArray(compositePosLoc);
+                gl.vertexAttribPointer(compositePosLoc, 2, gl.FLOAT, false, 0, 0);
+                
+                gl.clearColor(0.0, 0.0, 0.0, 1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
                 requestAnimationFrame(render);
             }
