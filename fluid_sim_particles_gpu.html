@@ -36,12 +36,12 @@
     <canvas id="glCanvas"></canvas>
     <div id="controls">
         <label>
-            Particles: <span id="particleCountDisplay">2048</span>
-            <input type="range" id="particleCount" min="256" max="8192" step="256" value="2048">
+            Particles: <span id="particleCountDisplay">50000</span>
+            <input type="range" id="particleCount" min="256" max="100000" step="256" value="50000">
         </label>
         <label>
-            Trail Fade: <span id="trailFadeDisplay">0.98</span>
-            <input type="range" id="trailFade" min="0.90" max="0.995" step="0.005" value="0.98">
+            Trail Fade: <span id="trailFadeDisplay">0.9</span>
+            <input type="range" id="trailFade" min="0.90" max="0.9995" step="0.0005" value="0.9">
         </label>
     </div>
     <script>
@@ -217,8 +217,8 @@
                     }
                     let phi = Math.atan2(dy,dx);
 
-                    initialData[idx] = -Math.random()*b*r*Math.sin(phi)*(1/(r + 2.0))*0;
-                    initialData[idx + 1] = Math.random()*b*r*Math.cos(phi)*(1/(r + 2.0))*0;
+                    initialData[idx] = (Math.random()-0.5)*0.4;
+                    initialData[idx + 1] = (Math.random()-0.5)*0.4;
                     initialData[idx + 2] = 1.0;
                     initialData[idx + 3] = Math.pow(Math.sin(x*20)*Math.cos(y*20), 2);
                 }
@@ -243,7 +243,7 @@
             // ==================== PARTICLE SETUP ====================
             // Get initial particle count from UI
             let PARTICLE_COUNT = parseInt(document.getElementById('particleCount').value);
-            let PARTICLE_TEX_WIDTH = 64;
+            let PARTICLE_TEX_WIDTH = 512;
             let PARTICLE_TEX_HEIGHT = Math.ceil(PARTICLE_COUNT / PARTICLE_TEX_WIDTH);
             PARTICLE_COUNT = PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT; // Adjust to fit texture
             
@@ -353,7 +353,11 @@
             const compositeResLoc = gl.getUniformLocation(displayCompositeProgram, 'resolution');
             
             const D = 0.045;
-            const dt = 0.2;
+            
+            const dt = 0.8;
+            
+            const numSubsteps = Math.ceil(dt / 0.05);
+            
             let t = 0;
             let currentRead = 0;
             
@@ -404,7 +408,7 @@
                 t = t + dt;
 
                 // ==================== FLUID COMPUTE ====================
-                const numSubsteps = 2;
+                
                 
                 for (let substep = 0; substep < numSubsteps; substep++) {
                     const readCurrentIndex = currentRead;

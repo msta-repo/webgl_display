@@ -21,9 +21,11 @@ void main() {
     // Sample velocity field at particle position
     vec2 velocityUV = posToUV(pos);
     vec4 velocity = texture2D(velocityField, velocityUV);
-    
+
+    float mass = 0.5 + 9.5 * fract(sin(dot(pos, vec2(12.9898, 78.233))) * 43758.5453);
+
     // Update position: Particle.Pos += dt * v.xyz
-    pos += dt * velocity.xy * 0.01;
+    pos += dt * velocity.xy * 0.01/mass;
     
     // Wrap around boundaries
     if (pos.x < -1.0) pos.x += 2.0;

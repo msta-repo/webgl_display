@@ -74,7 +74,7 @@ void main() {
     
     // Then apply forces
     float force_strength = exp(-dot(texCoord.xy-0.5, texCoord.xy-0.5)/0.005);
-    vec2 ExternalForces = vec2(0.0, 0.001)*force_strength;
+    vec2 ExternalForces = vec2(0.0, 0.000)*force_strength;
     FC.xy += dt * (ViscosityForce - PdX + ExternalForces);
     
     // ==================== BOUNDARY CONDITIONS ====================
