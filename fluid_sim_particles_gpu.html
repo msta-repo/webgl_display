@@ -217,7 +217,7 @@
                     }
                     let phi = Math.atan2(dy,dx);
 
-                    initialData[idx] = (Math.random()-0.5)*0.4;
+                    initialData[idx] = (Math.random()-0.4)*0.4;
                     initialData[idx + 1] = (Math.random()-0.5)*0.4;
                     initialData[idx + 2] = 1.0;
                     initialData[idx + 3] = Math.pow(Math.sin(x*20)*Math.cos(y*20), 2);
@@ -313,6 +313,7 @@
             const computeDtLoc = gl.getUniformLocation(computeProgram, 'dt');
             const computeDLoc = gl.getUniformLocation(computeProgram, 'D');
             const computetLoc = gl.getUniformLocation(computeProgram, 't');
+            const computeusePeriodicLoc = gl.getUniformLocation(computeProgram, 'usePeriodic');
 
             // Fluid display
             gl.useProgram(displayProgram);
@@ -435,6 +436,7 @@
                     gl.uniform1f(computeDtLoc, dt / numSubsteps);  
                     gl.uniform1f(computeDLoc, D);
                     gl.uniform1f(computetLoc, t + substep * dt / numSubsteps);
+                    gl.uniform1f(computeusePeriodicLoc, 1.0);
 
                     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
                     gl.enableVertexAttribArray(computePosLoc);
