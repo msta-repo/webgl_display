@@ -32,5 +32,8 @@ void main() {
     float velocity_factor = squeeze( sqrt(dot(FC.xy, FC.xy)), 0.00001);
 
     gl_FragColor = vec4(squeeze( FC.x, 1.0)*density_factor,squeeze( FC.y, 1.0)*density_factor,density_factor,  1.0);
+    gl_FragColor = vec4(density_factor*vec3(0.4,0.1,0.7),  1.0);
+    //gl_FragColor = vec4(vec3(0.9, 0.3,0.1)*FC.w, 1.0);
+
     //gl_FragColor = vec4(FC.w*0.5, 0.0,0.0,  1.0);
 }

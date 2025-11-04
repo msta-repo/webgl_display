@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>2D Wave Equation Solver</title>
+    <title>2D Wave Equation Solver with GPU Particles</title>
     <style>
         body {
             margin: 0;
@@ -84,6 +84,21 @@
                 return;
             }
 
+            const instancingExt = gl.getExtension('ANGLE_instanced_arrays');
+            if (!instancingExt) {
+                console.error('ANGLE_instanced_arrays extension not supported');
+                alert('Your browser does not support instanced rendering.');
+                return;
+            }
+
+            // Enable texture sampling in vertex shader
+            const maxVertexTextures = gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS);
+            if (maxVertexTextures === 0) {
+                console.error('Vertex texture fetch not supported');
+                alert('Your browser does not support vertex texture fetch.');
+                return;
+            }
+
             const simWidth = Math.floor(window.innerWidth/2);
             const simHeight = Math.floor(window.innerHeight/2);
 
@@ -95,11 +110,14 @@
             resizeCanvas();
 
             let vsSource, writeSource, computeSource, displaySource;
+            let particleComputeSource, particleVsSource;
             try {
                 vsSource = await loadShaderSource("vertex.glsl");
                 writeSource = await loadShaderSource("write_texture.glsl");
                 computeSource = await loadShaderSource("compute_fluid.glsl");
                 displaySource = await loadShaderSource("display_fluid.glsl");
+                particleComputeSource = await loadShaderSource("compute_particles.glsl");
+                particleVsSource = await loadShaderSource("vertex_particles_gpu.glsl");
             } catch (error) {
                 console.error("Error loading shaders:", error);
                 return;
@@ -109,15 +127,37 @@
             const writeFragShader = compileShader(gl, gl.FRAGMENT_SHADER, writeSource);
             const computeFragShader = compileShader(gl, gl.FRAGMENT_SHADER, computeSource);
             const displayFragShader = compileShader(gl, gl.FRAGMENT_SHADER, displaySource);
+            const particleComputeFragShader = compileShader(gl, gl.FRAGMENT_SHADER, particleComputeSource);
+            const particleVertexShader = compileShader(gl, gl.VERTEX_SHADER, particleVsSource);
 
-            if (!vertexShader || !writeFragShader || !computeFragShader || !displayFragShader) {
+            // Simple particle fragment shader
+            const particleFsSource = `
+                precision mediump float;
+                varying vec2 vTexCoord;
+                
+                void main() {
+                    vec2 center = vec2(0.5);
+                    float dist = distance(vTexCoord, center);
+                    float alpha = smoothstep(0.5, 0.1, dist);
+                    
+                    vec3 color = vec3(1.0, 0.8, 0.3);
+                    gl_FragColor = vec4(color, alpha * 0.8);
+                }
+            `;
+            const particleFragShader = compileShader(gl, gl.FRAGMENT_SHADER, particleFsSource);
+
+            if (!vertexShader || !writeFragShader || !computeFragShader || !displayFragShader || 
+                !particleComputeFragShader || !particleVertexShader || !particleFragShader) {
                 console.error("Shader compilation failed!");
                 return;
             }
 
             const computeProgram = createProgram(gl, vertexShader, computeFragShader);
             const displayProgram = createProgram(gl, vertexShader, displayFragShader);
+            const particleComputeProgram = createProgram(gl, vertexShader, particleComputeFragShader);
+            const particleRenderProgram = createProgram(gl, particleVertexShader, particleFragShader);
 
+            // Initialize fluid field
             const initialData = new Float32Array(simWidth * simHeight * 4);
             for (let y = 0; y < simHeight; y++) {
                 for (let x = 0; x < simWidth; x++) {
@@ -130,14 +170,12 @@
                     if (Math.abs(r)<100.0){
                         b = 1.0;
                     }
-                    // Gaussian pulse - now can be any float value
                     let phi = Math.atan2(dy,dx);
 
                     initialData[idx] = -Math.random()*b*r*Math.sin(phi)*(1/(r + 2.0))*0;
                     initialData[idx + 1] = Math.random()*b*r*Math.cos(phi)*(1/(r + 2.0))*0;
-
                     initialData[idx + 2] = 1.0;
-                    initialData[idx + 3] = Math.pow(Math.sin(x*20)*Math.cos(y*20); // particle density channel
+                    initialData[idx + 3] = Math.pow(Math.sin(x*20)*Math.cos(y*20), 2);
                 }
             }
             
@@ -157,9 +195,48 @@
             gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
             gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
-            // ==================== COMPUTE SHADER UNIFORMS ====================
-            // Get uniform locations for the compute shader
-            // Add any custom uniforms here (e.g., mouse position, forcing terms, etc.)
+            // ==================== PARTICLE SETUP ====================
+            const PARTICLE_TEX_WIDTH = 64;
+            const PARTICLE_TEX_HEIGHT = 32;
+            const PARTICLE_COUNT = PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT; // 2048
+            
+            // Initialize particle positions
+            const particleInitialData = new Float32Array(PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT * 4);
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                particleInitialData[i * 4] = (Math.random() - 0.5) * 2;     // X
+                particleInitialData[i * 4 + 1] = (Math.random() - 0.5) * 2; // Y
+                particleInitialData[i * 4 + 2] = 0.0;
+                particleInitialData[i * 4 + 3] = 1.0;
+            }
+            
+            // Particle position textures (ping-pong)
+            const particleTex0 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, particleInitialData);
+            const particleTex1 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, null);
+            
+            const particleFb0 = createFramebuffer(gl, particleTex0);
+            const particleFb1 = createFramebuffer(gl, particleTex1);
+            
+            const particleTextures = [particleTex0, particleTex1];
+            const particleFramebuffers = [particleFb0, particleFb1];
+            let currentParticleRead = 0;
+            
+            // Quad for particle sprite
+            const particleQuad = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+            const particleQuadBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, particleQuadBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, particleQuad, gl.STATIC_DRAW);
+            
+            // Instance IDs (0, 1, 2, ..., PARTICLE_COUNT-1)
+            const instanceIDs = new Float32Array(PARTICLE_COUNT);
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                instanceIDs[i] = i;
+            }
+            const instanceIDBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, instanceIDBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, instanceIDs, gl.STATIC_DRAW);
+
+            // ==================== SHADER UNIFORMS ====================
+            // Fluid compute
             gl.useProgram(computeProgram);
             const computePosLoc = gl.getAttribLocation(computeProgram, 'aPosition');
             const computeFieldCurrentLoc = gl.getUniformLocation(computeProgram, 'fields_current');
@@ -169,14 +246,28 @@
             const computeDLoc = gl.getUniformLocation(computeProgram, 'D');
             const computetLoc = gl.getUniformLocation(computeProgram, 't');
 
-            
-            // ==================== DISPLAY SHADER UNIFORMS ====================
-            // Get uniform locations for the display shader
-            // Add any custom uniforms here (e.g., color mapping parameters, etc.)
+            // Fluid display
             gl.useProgram(displayProgram);
             const displayPosLoc = gl.getAttribLocation(displayProgram, 'aPosition');
             const displayFieldLoc = gl.getUniformLocation(displayProgram, 'fields_current');
             const displayResLoc = gl.getUniformLocation(displayProgram, 'resolution');
+            
+            // Particle compute
+            gl.useProgram(particleComputeProgram);
+            const particleComputePosLoc = gl.getAttribLocation(particleComputeProgram, 'aPosition');
+            const particleComputePositionsLoc = gl.getUniformLocation(particleComputeProgram, 'particlePositions');
+            const particleComputeVelocityLoc = gl.getUniformLocation(particleComputeProgram, 'velocityField');
+            const particleComputeTexSizeLoc = gl.getUniformLocation(particleComputeProgram, 'particleTexSize');
+            const particleComputeDtLoc = gl.getUniformLocation(particleComputeProgram, 'dt');
+            
+            // Particle render
+            gl.useProgram(particleRenderProgram);
+            const particleQuadLoc = gl.getAttribLocation(particleRenderProgram, 'aPosition');
+            const particleInstanceIDLoc = gl.getAttribLocation(particleRenderProgram, 'aInstanceID');
+            const particleRenderPositionsLoc = gl.getUniformLocation(particleRenderProgram, 'particlePositions');
+            const particleResLoc = gl.getUniformLocation(particleRenderProgram, 'resolution');
+            const particleTexSizeLoc = gl.getUniformLocation(particleRenderProgram, 'particleTexSize');
+            const particleSizeLoc = gl.getUniformLocation(particleRenderProgram, 'particleSize');
             
             const D = 0.045;
             const dt = 0.1;
@@ -186,11 +277,10 @@
             function render() {
                 t = t + dt;
 
-                // ==================== MULTIPLE SUBSTEPS ====================
-                const numSubsteps = 20;  // Number of simulation steps per frame
+                // ==================== FLUID COMPUTE ====================
+                const numSubsteps = 20;
                 
                 for (let substep = 0; substep < numSubsteps; substep++) {
-                    // Calculate buffer indices for this substep
                     const readCurrentIndex = currentRead;
                     const readPreviousIndex = (currentRead + 1) % 3;
                     const writeNextIndex = (currentRead + 2) % 3;
@@ -199,12 +289,10 @@
                     const readPreviousTexture = textures[readPreviousIndex];
                     const writeNextFramebuffer = framebuffers[writeNextIndex];
 
-                    // ==================== COMPUTE PASS ====================
                     gl.bindFramebuffer(gl.FRAMEBUFFER, writeNextFramebuffer);
                     gl.viewport(0, 0, simWidth, simHeight);
                     gl.useProgram(computeProgram);
 
-                    // Bind input textures
                     gl.activeTexture(gl.TEXTURE0);
                     gl.bindTexture(gl.TEXTURE_2D, readCurrentTexture);
                     gl.uniform1i(computeFieldCurrentLoc, 0);
@@ -213,7 +301,6 @@
                     gl.bindTexture(gl.TEXTURE_2D, readPreviousTexture);
                     gl.uniform1i(computeFieldPreviousLoc, 1);
                     
-                    // CRITICAL: Divide dt by numSubsteps for each substep!
                     gl.uniform2f(computeResLoc, simWidth, simHeight);
                     gl.uniform1f(computeDtLoc, dt / numSubsteps);  
                     gl.uniform1f(computeDLoc, D);
@@ -225,14 +312,41 @@
 
                     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-                    // Rotate to next buffer for the next substep
                     currentRead = writeNextIndex;
                 }
 
-                // ==================== DISPLAY PASS ====================
-                // Display the result of the last substep
-                const displayTexture = textures[currentRead];
+                // ==================== PARTICLE COMPUTE (GPU) ====================
+                const currentFluidTexture = textures[currentRead];
+                const readParticleTexture = particleTextures[currentParticleRead];
+                const writeParticleFramebuffer = particleFramebuffers[1 - currentParticleRead];
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER, writeParticleFramebuffer);
+                gl.viewport(0, 0, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
+                gl.useProgram(particleComputeProgram);
+                
+                // Bind current particle positions
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, readParticleTexture);
+                gl.uniform1i(particleComputePositionsLoc, 0);
+                
+                // Bind velocity field
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, currentFluidTexture);
+                gl.uniform1i(particleComputeVelocityLoc, 1);
+                
+                gl.uniform2f(particleComputeTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
+                gl.uniform1f(particleComputeDtLoc, dt);
+                
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                gl.enableVertexAttribArray(particleComputePosLoc);
+                gl.vertexAttribPointer(particleComputePosLoc, 2, gl.FLOAT, false, 0, 0);
+                
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                
+                // Swap particle buffers
+                currentParticleRead = 1 - currentParticleRead;
 
+                // ==================== FLUID DISPLAY ====================
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
                 gl.viewport(0, 0, canvas.width, canvas.height);
                 gl.useProgram(displayProgram);
@@ -240,7 +354,7 @@
                 gl.uniform2f(displayResLoc, canvas.width, canvas.height);
 
                 gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, displayTexture);
+                gl.bindTexture(gl.TEXTURE_2D, currentFluidTexture);
                 gl.uniform1i(displayFieldLoc, 0);
 
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
@@ -250,6 +364,37 @@
                 gl.clearColor(0.0, 0.0, 0.0, 1.0);
                 gl.clear(gl.COLOR_BUFFER_BIT);
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                // ==================== PARTICLE RENDER ====================
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+                
+                gl.useProgram(particleRenderProgram);
+                gl.uniform2f(particleResLoc, canvas.width, canvas.height);
+                gl.uniform2f(particleTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
+                gl.uniform1f(particleSizeLoc, 0.01);
+                
+                // Bind particle position texture
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, particleTextures[currentParticleRead]);
+                gl.uniform1i(particleRenderPositionsLoc, 0);
+                
+                // Bind quad vertices
+                gl.bindBuffer(gl.ARRAY_BUFFER, particleQuadBuffer);
+                gl.enableVertexAttribArray(particleQuadLoc);
+                gl.vertexAttribPointer(particleQuadLoc, 2, gl.FLOAT, false, 0, 0);
+                
+                // Bind instance IDs (per-instance)
+                gl.bindBuffer(gl.ARRAY_BUFFER, instanceIDBuffer);
+                gl.enableVertexAttribArray(particleInstanceIDLoc);
+                gl.vertexAttribPointer(particleInstanceIDLoc, 1, gl.FLOAT, false, 0, 0);
+                instancingExt.vertexAttribDivisorANGLE(particleInstanceIDLoc, 1);
+                
+                // Draw all particles
+                instancingExt.drawArraysInstancedANGLE(gl.TRIANGLE_STRIP, 0, 4, PARTICLE_COUNT);
+                
+                instancingExt.vertexAttribDivisorANGLE(particleInstanceIDLoc, 0);
+                gl.disable(gl.BLEND);
 
                 requestAnimationFrame(render);
             }

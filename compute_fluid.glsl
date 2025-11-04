@@ -74,18 +74,20 @@ void main() {
     
     // Then apply forces
     float force_strength = exp(-dot(texCoord.xy-0.5, texCoord.xy-0.5)/0.005);
-    vec2 ExternalForces = vec2(0.0, 0.08)*force_strength;
+    vec2 ExternalForces = vec2(0.0, 0.001)*force_strength;
     FC.xy += dt * (ViscosityForce - PdX + ExternalForces);
     
     // ==================== BOUNDARY CONDITIONS ====================
     // Need wider boundary for 4th-order stencil (3 pixels instead of 2)
-    //if (texCoord.x < Step.x * 3.0 || texCoord.x > 1.0 - Step.x * 3.0) {
-    //    FC.x = 0.0;
-    ////if (texCoord.y < Step.y * 3.0 || texCoord.y > 1.0 - Step.y * 3.0) {
-    //    FC.y = 0.0;
-    //}
+    if (texCoord.x < Step.x * 3.0 || texCoord.x > 1.0 - Step.x * 3.0) {
+        FC.x = 0.0;
+    }
+    if (texCoord.y < Step.y * 3.0 || texCoord.y > 1.0 - Step.y * 3.0) {
+        FC.y = 0.0;
+    }
     
-    FC.w = Udiv; // ad divergence to alpha channel for debugging
+    // particle advection
+
 
     gl_FragColor = FC;
 }
