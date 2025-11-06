@@ -219,8 +219,8 @@
             setupMouseHandlers(canvas);
             setupTouchHandlers(canvas);
 
-            const simWidth = Math.floor(window.innerWidth/1);
-            const simHeight = Math.floor(window.innerHeight/1);
+            const simWidth = Math.floor(window.innerWidth/2);
+            const simHeight = Math.floor(window.innerHeight/2);
 
             function resizeCanvas() {
                 canvas.width = window.innerWidth;
@@ -366,9 +366,11 @@
             let currentParticleRead = 0;
             
             // Trail textures (ping-pong)
-            const trailTex0 = createTexture(gl, canvas.width, canvas.height, null);
-            const trailTex1 = createTexture(gl, canvas.width, canvas.height, null);
-            
+            //const trailTex0 = createTexture(gl, canvas.width, canvas.height, null);
+            //const trailTex1 = createTexture(gl, canvas.width, canvas.height, null);
+
+            const trailTex0 = createTexture(gl, simWidth, simHeight, null);
+            const trailTex1 = createTexture(gl, simWidth, simHeight, null);
             const trailFb0 = createFramebuffer(gl, trailTex0);
             const trailFb1 = createFramebuffer(gl, trailTex1);
             
@@ -598,7 +600,8 @@
                 gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, readTrailTexture);
                 gl.uniform1i(fadeTrailPrevLoc, 0);
-                gl.uniform2f(fadeTrailResLoc, canvas.width, canvas.height);
+                //gl.uniform2f(fadeTrailResLoc, canvas.width, canvas.height);
+                gl.uniform2f(fadeTrailResLoc, simWidth, simHeight);
                 gl.uniform1f(fadeTrailAmountLoc, trailFade);
                 
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
@@ -613,7 +616,8 @@
                 gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive blending
                 
                 gl.useProgram(particleRenderProgram);
-                gl.uniform2f(particleResLoc, canvas.width, canvas.height);
+                //gl.uniform2f(particleResLoc, canvas.width, canvas.height);
+                gl.uniform2f(particleResLoc, simWidth, simHeight);
                 gl.uniform2f(particleTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
                 gl.uniform1f(particleSizeLoc, 0.001);
                 
@@ -645,10 +649,10 @@
                 // ==================== COMPOSITE DISPLAY ====================
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
                 //gl.viewport(0, 0, canvas.width, canvas.height);
-                gl.viewport(0, 0, simWidth, simHeight);
+                gl.viewport(0, 0, canvas.width,  canvas.height);
                 gl.useProgram(displayCompositeProgram);
                 
-                gl.uniform2f(compositeResLoc, simWidth, simHeight);
+                gl.uniform2f(compositeResLoc, canvas.width, canvas.height);
                 
                 // Bind fluid texture
                 gl.activeTexture(gl.TEXTURE0);
