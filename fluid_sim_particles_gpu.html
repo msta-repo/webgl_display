@@ -7,6 +7,7 @@
             margin: 0;
             overflow: hidden;
             background-color: #111;
+            touch-action: none;
         }
         canvas {
             display: block;
@@ -45,6 +46,94 @@
         </label>
     </div>
     <script>
+        // Mouse/Touch state tracking
+        let mouseState = {
+            isDown: false,
+            x: 0,
+            y: 0,
+            prevX: 0,
+            prevY: 0,
+            normalizedX: 0,
+            normalizedY: 0,
+            prevNormalizedX: 0,
+            prevNormalizedY: 0,
+            velocityX: 0,
+            velocityY: 0
+        };
+
+        // Update position helper function
+        function updatePosition(canvas, clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            
+            mouseState.prevX = mouseState.x;
+            mouseState.prevY = mouseState.y;
+            mouseState.prevNormalizedX = mouseState.normalizedX;
+            mouseState.prevNormalizedY = mouseState.normalizedY;
+            
+            mouseState.x = clientX - rect.left;
+            mouseState.y = clientY - rect.top;
+            
+            mouseState.normalizedX = mouseState.x / canvas.width;
+            mouseState.normalizedY = 1.0 - (mouseState.y / canvas.height);
+            
+            mouseState.velocityX = mouseState.normalizedX - mouseState.prevNormalizedX;
+            mouseState.velocityY = mouseState.normalizedY - mouseState.prevNormalizedY;
+        }
+
+        // Mouse event handlers
+        function setupMouseHandlers(canvas) {
+            canvas.addEventListener('mousedown', (e) => {
+                mouseState.isDown = true;
+                updatePosition(canvas, e.clientX, e.clientY);
+                mouseState.velocityX = 0;
+                mouseState.velocityY = 0;
+            });
+
+            canvas.addEventListener('mouseup', () => {
+                mouseState.isDown = false;
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+                if (mouseState.isDown) {
+                    updatePosition(canvas, e.clientX, e.clientY);
+                }
+            });
+
+            canvas.addEventListener('mouseleave', () => {
+                mouseState.isDown = false;
+            });
+        }
+
+        // Touch event handlers
+        function setupTouchHandlers(canvas) {
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                mouseState.isDown = true;
+                const touch = e.touches[0];
+                updatePosition(canvas, touch.clientX, touch.clientY);
+                mouseState.velocityX = 0;
+                mouseState.velocityY = 0;
+            });
+
+            canvas.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                mouseState.isDown = false;
+            });
+
+            canvas.addEventListener('touchcancel', (e) => {
+                e.preventDefault();
+                mouseState.isDown = false;
+            });
+
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                if (e.touches.length > 0) {
+                    const touch = e.touches[0];
+                    updatePosition(canvas, touch.clientX, touch.clientY);
+                }
+            });
+        }
+
         async function loadShaderSource(url) {
             const response = await fetch(url);
             if (!response.ok) {
@@ -126,8 +215,12 @@
                 return;
             }
 
-            const simWidth = Math.floor(window.innerWidth/2);
-            const simHeight = Math.floor(window.innerHeight/2);
+            // Setup mouse and touch handlers
+            setupMouseHandlers(canvas);
+            setupTouchHandlers(canvas);
+
+            const simWidth = Math.floor(window.innerWidth/1);
+            const simHeight = Math.floor(window.innerHeight/1);
 
             function resizeCanvas() {
                 canvas.width = window.innerWidth;
@@ -183,7 +276,7 @@
 
 
                     vec3 color = vec3(255.0, 200.0,14.0) / 255.0*sparkle;
-                    gl_FragColor = vec4(color*0.04, alpha * 0.8);
+                    gl_FragColor = vec4(color, 0.1);
                 }
             `;
             const particleFragShader = compileShader(gl, gl.FRAGMENT_SHADER, particleFsSource);
@@ -314,6 +407,10 @@
             const computeDLoc = gl.getUniformLocation(computeProgram, 'D');
             const computetLoc = gl.getUniformLocation(computeProgram, 't');
             const computeusePeriodicLoc = gl.getUniformLocation(computeProgram, 'usePeriodic');
+            const computeMouseActiveLoc = gl.getUniformLocation(computeProgram, 'u_mouseActive');
+            const computeMousePosLoc = gl.getUniformLocation(computeProgram, 'u_mousePos');
+            const computeMouseVelLoc = gl.getUniformLocation(computeProgram, 'u_mouseVel');
+            const computeMouseRadiusLoc = gl.getUniformLocation(computeProgram, 'u_mouseRadius');
 
             // Fluid display
             gl.useProgram(displayProgram);
@@ -355,9 +452,9 @@
             
             const D = 0.045;
             
-            const dt = 0.8;
+            const dt = 0.4;
             
-            const numSubsteps = Math.ceil(dt / 0.05);
+            const numSubsteps = Math.ceil(dt / 0.01);
             
             let t = 0;
             let currentRead = 0;
@@ -437,6 +534,16 @@
                     gl.uniform1f(computeDLoc, D);
                     gl.uniform1f(computetLoc, t + substep * dt / numSubsteps);
                     gl.uniform1f(computeusePeriodicLoc, 1.0);
+                    
+                    // Set mouse interaction uniforms
+                    if (mouseState.isDown) {
+                        gl.uniform1i(computeMouseActiveLoc, 1);
+                        gl.uniform2f(computeMousePosLoc, mouseState.normalizedX, mouseState.normalizedY);
+                        gl.uniform2f(computeMouseVelLoc, mouseState.velocityX * 50.0, mouseState.velocityY * 50.0);
+                        gl.uniform1f(computeMouseRadiusLoc, 0.05);
+                    } else {
+                        gl.uniform1i(computeMouseActiveLoc, 0);
+                    }
 
                     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
                     gl.enableVertexAttribArray(computePosLoc);
@@ -484,7 +591,8 @@
                 const writeTrailFramebuffer = trailFramebuffers[1 - currentTrailRead];
                 
                 gl.bindFramebuffer(gl.FRAMEBUFFER, writeTrailFramebuffer);
-                gl.viewport(0, 0, canvas.width, canvas.height);
+                //gl.viewport(0, 0, canvas.width, canvas.height);
+                gl.viewport(0, 0, simWidth, simHeight);
                 gl.useProgram(fadeTrailProgram);
                 
                 gl.activeTexture(gl.TEXTURE0);
@@ -507,7 +615,7 @@
                 gl.useProgram(particleRenderProgram);
                 gl.uniform2f(particleResLoc, canvas.width, canvas.height);
                 gl.uniform2f(particleTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
-                gl.uniform1f(particleSizeLoc, 0.004);
+                gl.uniform1f(particleSizeLoc, 0.001);
                 
                 // Bind particle position texture
                 gl.activeTexture(gl.TEXTURE0);
@@ -536,10 +644,11 @@
 
                 // ==================== COMPOSITE DISPLAY ====================
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-                gl.viewport(0, 0, canvas.width, canvas.height);
+                //gl.viewport(0, 0, canvas.width, canvas.height);
+                gl.viewport(0, 0, simWidth, simHeight);
                 gl.useProgram(displayCompositeProgram);
                 
-                gl.uniform2f(compositeResLoc, canvas.width, canvas.height);
+                gl.uniform2f(compositeResLoc, simWidth, simHeight);
                 
                 // Bind fluid texture
                 gl.activeTexture(gl.TEXTURE0);

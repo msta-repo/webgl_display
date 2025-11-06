@@ -14,6 +14,12 @@ varying float vY;
 
 uniform float usePeriodic; 
 
+// Mouse interaction uniforms
+uniform int u_mouseActive;
+uniform vec2 u_mousePos;
+uniform vec2 u_mouseVel;
+uniform float u_mouseRadius; 
+
 // Wrap texture coordinates for periodic boundaries
 vec2 wrap(vec2 coord) {
     return fract(coord);
@@ -25,7 +31,7 @@ void main() {
     
     float CScale = 0.5;
     float K = 0.025;
-    float v = 0.02;
+    float v = 0.05;
     float S = K / dt;
     
     // Sample with wrapping
@@ -70,6 +76,23 @@ void main() {
     
     float force_strength = exp(-dot(texCoord.xy-0.5, texCoord.xy-0.5)/0.005);
     vec2 ExternalForces = vec2(0.0, 0.000)*force_strength;
+    
+    // Add mouse/touch interaction force with Gaussian falloff
+    if (u_mouseActive == 1) {
+        vec2 toMouse = texCoord - u_mousePos;
+        float distSq = dot(toMouse, toMouse);
+        float radiusSq = u_mouseRadius * u_mouseRadius;
+        
+        // Gaussian falloff: exp(-distSq / (2 * sigma^2))
+        // Using sigma = radius/2 for a smooth falloff
+        float sigma = u_mouseRadius * 0.5;
+        float sigmaSq = sigma * sigma;
+        float gaussian = exp(-distSq / (2.0 * sigmaSq));
+        
+        // Apply velocity scaled by Gaussian
+        ExternalForces += u_mouseVel * gaussian*0.1;
+    }
+    
     FC.xy += dt * (ViscosityForce - PdX + ExternalForces);
     
        // ==================== BOUNDARY CONDITIONS (only for walls) ====================
