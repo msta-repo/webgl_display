@@ -311,8 +311,8 @@
                     }
                     let phi = Math.atan2(dy,dx);
 
-                    initialData[idx] = (Math.random()-0.4)*0.4;
-                    initialData[idx + 1] = (Math.random()-0.5)*0.4;
+                    initialData[idx] = (Math.random()-0.4)*0.5;
+                    initialData[idx + 1] = (Math.random()-0.4)*0.5;
                     initialData[idx + 2] = 1.0;
                     initialData[idx + 3] = Math.pow(Math.sin(x*20)*Math.cos(y*20), 2);
                 }
@@ -455,7 +455,7 @@
             
             const D = 0.045;
             
-            const dt = 0.6;
+            const dt = 0.4;
             
             const numSubsteps = Math.ceil(dt / 0.1);
             

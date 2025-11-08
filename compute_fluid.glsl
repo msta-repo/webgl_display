@@ -30,8 +30,8 @@ void main() {
     vec2 Step = 1.0 / resolution;
     
     float CScale = 0.5;
-    float K = 0.025;
-    float v = 0.05;
+    float K = 0.045;
+    float v = 0.04;
     float S = K / dt;
     
     // Sample with wrapping
@@ -70,6 +70,8 @@ void main() {
     vec2 Laplacian = (FR.xy + FL.xy + FT.xy + FD.xy) - 4.0 * FC.xy;
     vec2 ViscosityForce = v * Laplacian;
     
+   
+
     // Semi-Lagrangian advection with wrapping
     vec2 Was = wrap(texCoord - dt * FC.xy * Step);
     FC.xy = texture2D(fields_current, Was).xy;
@@ -105,5 +107,6 @@ void main() {
         }
     }
 
+    
     gl_FragColor = FC;
 }

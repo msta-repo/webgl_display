@@ -1,4 +1,8 @@
-precision highp float;
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+    precision highp float;
+#else
+    precision mediump float;
+#endif
 
 uniform sampler2D fluidTexture;
 uniform sampler2D trailTexture;
@@ -29,11 +33,11 @@ void main() {
     float velocity_factor = squeeze( abs(FC.y),0.0, 0.1);
 
 
-    vec3 fluid = vec3(0.5, 0.0,0.7)*density_factor;
-
+    //vec3 fluid = vec3(0.5, 0.0,0.7)*density_factor;
+    vec3 fluid = vec3(abs(FC.x), abs(FC.y), 0.0)*10.0*density_factor;
     // Composite trail on top of fluid
-    vec3 finalColor = fluid.rgb+  trail.rgb;
-    
+    //vec3 finalColor = fluid.rgb+  trail.rgb;
+    vec3 finalColor = fluid.rgb*1.5 + trail.rgb;
     //gl_FragColor = vec4(finalColor, 1.0);
 
     gl_FragColor = vec4(finalColor, 1.0);
