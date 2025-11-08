@@ -37,12 +37,12 @@
     <canvas id="glCanvas"></canvas>
     <div id="controls">
         <label>
-            Particles: <span id="particleCountDisplay">50000</span>
-            <input type="range" id="particleCount" min="256" max="100000" step="256" value="50000">
+            Particles: <span id="particleCountDisplay">15000</span>
+            <input type="range" id="particleCount" min="256" max="32768" step="256" value="15000">
         </label>
         <label>
-            Trail Fade: <span id="trailFadeDisplay">0.9</span>
-            <input type="range" id="trailFade" min="0.90" max="0.9995" step="0.0005" value="0.9">
+            Trail Fade: <span id="trailFadeDisplay">9</span>
+            <input type="range" id="trailFade" min="0.0" max="9.995" step="0.0005" value="0.9">
         </label>
     </div>
     <script>
@@ -219,8 +219,9 @@
             setupMouseHandlers(canvas);
             setupTouchHandlers(canvas);
 
-            const simWidth = Math.floor(window.innerWidth/2);
-            const simHeight = Math.floor(window.innerHeight/2);
+            const simScale = Math.sqrt(1/3);
+            const simWidth = Math.floor(window.innerWidth*simScale);
+            const simHeight = Math.floor(window.innerHeight*simScale);
 
             function resizeCanvas() {
                 canvas.width = window.innerWidth;
@@ -257,7 +258,7 @@
 
             // Simple particle fragment shader
             const particleFsSource = `
-                precision mediump float;
+                precision highp float;
                 varying vec2 vTexCoord;
                 varying float vInstanceID;
 
@@ -270,13 +271,13 @@
                 void main() {
                     vec2 center = vec2(0.5);
                     float dist = distance(vTexCoord, center);
-                    float alpha = smoothstep(0.5, 0.1, dist);
+                    float alpha = smoothstep(0.5, 0.0, dist);
                     
                     float sparkle = random(vInstanceID + t * 1.9);
 
 
-                    vec3 color = vec3(255.0, 200.0,14.0) / 255.0*sparkle;
-                    gl_FragColor = vec4(color, 0.1);
+                    vec3 color = vec3(255.0, 100.0,14.0) / 255.0;//*sparkle;
+                    gl_FragColor = vec4(color*alpha, alpha*0.01);
                 }
             `;
             const particleFragShader = compileShader(gl, gl.FRAGMENT_SHADER, particleFsSource);
@@ -336,7 +337,7 @@
             // ==================== PARTICLE SETUP ====================
             // Get initial particle count from UI
             let PARTICLE_COUNT = parseInt(document.getElementById('particleCount').value);
-            let PARTICLE_TEX_WIDTH = 512;
+            let PARTICLE_TEX_WIDTH = 256;
             let PARTICLE_TEX_HEIGHT = Math.ceil(PARTICLE_COUNT / PARTICLE_TEX_WIDTH);
             PARTICLE_COUNT = PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT; // Adjust to fit texture
             
@@ -454,9 +455,9 @@
             
             const D = 0.045;
             
-            const dt = 0.4;
+            const dt = 0.6;
             
-            const numSubsteps = Math.ceil(dt / 0.01);
+            const numSubsteps = Math.ceil(dt / 0.1);
             
             let t = 0;
             let currentRead = 0;
@@ -614,13 +615,14 @@
                 // Now draw particles on top with additive blending
                 gl.enable(gl.BLEND);
                 gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive blending
-                
+                //gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
                 gl.useProgram(particleRenderProgram);
                 //gl.uniform2f(particleResLoc, canvas.width, canvas.height);
                 gl.uniform2f(particleResLoc, simWidth, simHeight);
                 gl.uniform2f(particleTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
-                gl.uniform1f(particleSizeLoc, 0.001);
-                
+                //gl.uniform1f(particleSizeLoc, 0.005);
+                gl.uniform1f(particleSizeLoc, 0.01/simScale);
                 // Bind particle position texture
                 gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, particleTextures[currentParticleRead]);
