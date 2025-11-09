@@ -219,7 +219,7 @@
             setupMouseHandlers(canvas);
             setupTouchHandlers(canvas);
 
-            const simScale = Math.sqrt(1/1);
+            const simScale = Math.sqrt(2);
             const simWidth = Math.floor(window.innerWidth*simScale);
             const simHeight = Math.floor(window.innerHeight*simScale);
 
@@ -311,8 +311,8 @@
                     }
                     let phi = Math.atan2(dy,dx);
 
-                    initialData[idx] = (Math.random()-0.5)*0.5*4;
-                    initialData[idx + 1] = (Math.random()-0.5)*0.5*4;
+                    initialData[idx] = (Math.random()-0.5)*0.5*0.0;
+                    initialData[idx + 1] = (Math.random()-0.5)*0.5*0.0;
                     initialData[idx + 2] = 1.0;
                     initialData[idx + 3] = Math.pow(Math.sin(x*20)*Math.cos(y*20), 2);
                 }
@@ -341,12 +341,33 @@
             let PARTICLE_TEX_HEIGHT = Math.ceil(PARTICLE_COUNT / PARTICLE_TEX_WIDTH);
             PARTICLE_COUNT = PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT; // Adjust to fit texture
             
+            
+
             function initializeParticles() {
-                // Initialize particle positions
+                // Initialize particle positions on a grid
                 const particleInitialData = new Float32Array(PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT * 4);
+                
+                // Calculate grid dimensions (make it roughly square)
+                const particlesPerRow = Math.ceil(Math.sqrt(PARTICLE_COUNT));
+                const particlesPerCol = Math.ceil(PARTICLE_COUNT / particlesPerRow);
+                
+                // Calculate spacing to fill the screen perfectly (domain is [-1, 1], width = 2)
+                const w = 2.0 / (Math.max(particlesPerRow, particlesPerCol) - 1);
+                
                 for (let i = 0; i < PARTICLE_COUNT; i++) {
-                    particleInitialData[i * 4] = (Math.random() - 0.5) * 2;     // X
-                    particleInitialData[i * 4 + 1] = (Math.random() - 0.5) * 2; // Y
+                    const row = Math.floor(i / particlesPerRow);
+                    const col = i % particlesPerRow;
+                    
+                    // Calculate grid position with spacing w
+                    const x = col * w;
+                    const y = row * w;
+                    
+                    // Center the grid around (0, 0)
+                    const centerX = -(particlesPerRow - 1) * w / 2;
+                    const centerY = -(particlesPerCol - 1) * w / 2;
+                    
+                    particleInitialData[i * 4] = x + centerX;     // X
+                    particleInitialData[i * 4 + 1] = y + centerY; // Y
                     particleInitialData[i * 4 + 2] = 0.0;
                     particleInitialData[i * 4 + 3] = 0.0;
                 }
@@ -622,7 +643,7 @@
                 gl.uniform2f(particleResLoc, simWidth, simHeight);
                 gl.uniform2f(particleTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
                 //gl.uniform1f(particleSizeLoc, 0.005);
-                gl.uniform1f(particleSizeLoc, 0.01/simScale);
+                gl.uniform1f(particleSizeLoc, 0.006/simScale);
                 // Bind particle position texture
                 gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, particleTextures[currentParticleRead]);
