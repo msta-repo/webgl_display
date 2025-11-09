@@ -33,17 +33,17 @@ void main() {
     float velocity_factor = squeeze( abs(FC.y),0.0, 0.1);
 
 
-    vec3 fluid = vec3(0.5, 0.0,0.7)*density_factor;
+    vec3 fluid = vec3(0.2, 0.0,0.7)*density_factor;
 
-    vec3 vort = vec3(0.0,0.0,0.3)*squeeze(FC.a, 0.0,0.5);
+    vec3 vort = vec3(0.0,0.0,0.3)*squeeze(FC.a, 0.0,0.3);
 
-     vort = vort + vec3(0.0,0.3,0.0)*squeeze(-FC.a, 0.0,0.5);
+     vort = vort + vec3(0.0,0.3,0.0)*squeeze(-FC.a, 0.0,0.3);
     //vort += vec3(0.0,0.3,0.0)*abs(squeeze(FC.a,-0.5,0.0));
 
     //vec3 fluid = vec3(abs(FC.x), abs(FC.y), 0.0)*10.0*density_factor;
     // Composite trail on top of fluid
     //vec3 finalColor = fluid.rgb+  trail.rgb;
-    vec3 finalColor = fluid.rgb + trail.rgb + vort.rgb;
+    vec3 finalColor = mix(fluid.rgb, vort.rgb, 0.8) + trail.rgb ;
     //gl_FragColor = vec4(finalColor, 1.0);
 
     gl_FragColor = vec4(finalColor, 1.0);

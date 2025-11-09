@@ -42,7 +42,7 @@
         </label>
         <label>
             Trail Fade: <span id="trailFadeDisplay">9.7</span>
-            <input type="range" id="trailFade" min="7.5" max="9.999" step="0.0000005" value="9.7">
+            <input type="range" id="trailFade" min="0.0" max="9.999" step="0.00005" value="9.7">
         </label>
     </div>
     <script>
@@ -242,6 +242,7 @@
                 particleVsSource = await loadShaderSource("vertex_particles_gpu.glsl");
                 fadeTrailSource = await loadShaderSource("fade_trail.glsl");
                 displayCompositeSource = await loadShaderSource("display_composite.glsl");
+                particleFsSource = await loadShaderSource("particle_fragment.glsl");
             } catch (error) {
                 console.error("Error loading shaders:", error);
                 return;
@@ -256,31 +257,7 @@
             const fadeTrailFragShader = compileShader(gl, gl.FRAGMENT_SHADER, fadeTrailSource);
             const displayCompositeFragShader = compileShader(gl, gl.FRAGMENT_SHADER, displayCompositeSource);
 
-            // Simple particle fragment shader
-            const particleFsSource = `
-                precision highp float;
-                varying vec2 vTexCoord;
-                varying float vInstanceID;
-                uniform float fadeAmount;
-                uniform float t;
-                // Random function - MUST be before main()
-                float random(float seed) {
-                    return fract(sin(seed * 12.9898) * 43758.5453);
-                }
 
-                void main() {
-                    vec2 center = vec2(0.5);
-                    float dist = distance(vTexCoord, center);
-                    float alpha = smoothstep(0.5, 0.0, dist);
-                    
-                    float sparkle = random(vInstanceID + t * 1.9);
-
-                    float fadeAlphaMod = (10.0 - fadeAmount + 0.05);
-
-                    vec3 color = vec3(255.0, 100.0,14.0) / 255.0*sparkle;
-                    gl_FragColor = vec4(color*alpha, alpha*0.4 * fadeAlphaMod);
-                }
-            `;
             const particleFragShader = compileShader(gl, gl.FRAGMENT_SHADER, particleFsSource);
 
             if (!vertexShader || !writeFragShader || !computeFragShader || !displayFragShader || 
@@ -461,6 +438,7 @@
             const particleTexSizeLoc = gl.getUniformLocation(particleRenderProgram, 'particleTexSize');
             const particleSizeLoc = gl.getUniformLocation(particleRenderProgram, 'particleSize');
             const particleFadeAmountLoc = gl.getUniformLocation(particleRenderProgram, 'fadeAmount');
+            const particletLoc = gl.getUniformLocation(particleRenderProgram, 't');
 
             // Fade trail
             gl.useProgram(fadeTrailProgram);
@@ -478,7 +456,7 @@
             
             const D = 0.045;
             
-            const dt = 0.1;
+            const dt = 0.2;
             
             const numSubsteps = Math.ceil(dt / 0.02);
             
@@ -656,9 +634,10 @@
                 gl.uniform2f(particleResLoc, simWidth, simHeight);
                 gl.uniform2f(particleTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
                 //gl.uniform1f(particleSizeLoc, 0.005);
-                gl.uniform1f(particleSizeLoc, 0.006/simScale);
+                gl.uniform1f(particleSizeLoc, 0.02/simScale);
                 gl.uniform1f(particleFadeAmountLoc, trailFade);
-                
+                gl.uniform1f(particletLoc, t);
+
                 // Bind particle position texture
                 gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, particleTextures[currentParticleRead]);
