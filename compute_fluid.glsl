@@ -38,20 +38,20 @@ void main() {
     vec4 FC = texture2D(fields_current, wrap(texCoord));
     
     // Standard neighbors with wrapping
-    vec3 FR = texture2D(fields_current, wrap(texCoord + vec2(Step.x, 0.0))).xyz;
-    vec3 FL = texture2D(fields_current, wrap(texCoord - vec2(Step.x, 0.0))).xyz;
-    vec3 FT = texture2D(fields_current, wrap(texCoord + vec2(0.0, Step.y))).xyz;
-    vec3 FD = texture2D(fields_current, wrap(texCoord - vec2(0.0, Step.y))).xyz;
+    vec4 FR = texture2D(fields_current, wrap(texCoord + vec2(Step.x, 0.0)));
+    vec4 FL = texture2D(fields_current, wrap(texCoord - vec2(Step.x, 0.0)));
+    vec4 FT = texture2D(fields_current, wrap(texCoord + vec2(0.0, Step.y)));
+    vec4 FD = texture2D(fields_current, wrap(texCoord - vec2(0.0, Step.y)));
     
     // Extended neighbors with wrapping
-    vec3 FRR = texture2D(fields_current, wrap(texCoord + vec2(2.0 * Step.x, 0.0))).xyz;
-    vec3 FLL = texture2D(fields_current, wrap(texCoord - vec2(2.0 * Step.x, 0.0))).xyz;
-    vec3 FTT = texture2D(fields_current, wrap(texCoord + vec2(0.0, 2.0 * Step.y))).xyz;
-    vec3 FDD = texture2D(fields_current, wrap(texCoord - vec2(0.0, 2.0 * Step.y))).xyz;
+    vec4 FRR = texture2D(fields_current, wrap(texCoord + vec2(2.0 * Step.x, 0.0)));
+    vec4 FLL = texture2D(fields_current, wrap(texCoord - vec2(2.0 * Step.x, 0.0)));
+    vec4 FTT = texture2D(fields_current, wrap(texCoord + vec2(0.0, 2.0 * Step.y)));
+    vec4 FDD = texture2D(fields_current, wrap(texCoord - vec2(0.0, 2.0 * Step.y)));
     
     // ==================== SPATIAL DERIVATIVES ====================
-    vec3 UdX = (-FRR + 8.0 * FR - 8.0 * FL + FLL) / 12.0;
-    vec3 UdY = (-FTT + 8.0 * FT - 8.0 * FD + FDD) / 12.0;
+    vec3 UdX = (-FRR.xyz + 8.0 * FR.xyz - 8.0 * FL.xyz + FLL.xyz) / 12.0;
+    vec3 UdY = (-FTT.xyz + 8.0 * FT.xyz - 8.0 * FD.xyz + FDD.xyz) / 12.0;
     
     float Udiv = UdX.x + UdY.y;
     vec2 DdX = vec2(UdX.z, UdY.z);
@@ -97,6 +97,14 @@ void main() {
     
     FC.xy += dt * (ViscosityForce - PdX + ExternalForces);
     
+    // Vorticity confinement based on values stored in alpha
+    FC.a = (FR.y - FL.y - FT.x + FD.x);
+    vec2 vort = vec2(abs(FT.a) - abs(FD.a), abs(FL.a) - abs(FR.a));
+    float VORTICITY_AMOUNT = 0.006;
+    vort *= VORTICITY_AMOUNT/length(vort + 1e-9)*FC.w;
+    FC.xy += vort;
+
+
        // ==================== BOUNDARY CONDITIONS (only for walls) ====================
     if (usePeriodic < 0.5) {
         if (texCoord.x < Step.x * 3.0 || texCoord.x > 1.0 - Step.x * 3.0) {
