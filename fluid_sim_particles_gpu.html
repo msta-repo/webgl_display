@@ -41,8 +41,8 @@
             <input type="range" id="particleCount" min="256" max="32768" step="256" value="15000">
         </label>
         <label>
-            Trail Fade: <span id="trailFadeDisplay">9.5</span>
-            <input type="range" id="trailFade" min="0.0" max="9.995" step="0.0005" value="9.5">
+            Trail Fade: <span id="trailFadeDisplay">9.7</span>
+            <input type="range" id="trailFade" min="7.5" max="9.999" step="0.0000005" value="9.7">
         </label>
     </div>
     <script>
@@ -219,7 +219,7 @@
             setupMouseHandlers(canvas);
             setupTouchHandlers(canvas);
 
-            const simScale = Math.sqrt(2);
+            const simScale = Math.sqrt(1);
             const simWidth = Math.floor(window.innerWidth*simScale);
             const simHeight = Math.floor(window.innerHeight*simScale);
 
@@ -261,7 +261,7 @@
                 precision highp float;
                 varying vec2 vTexCoord;
                 varying float vInstanceID;
-
+                uniform float fadeAmount;
                 uniform float t;
                 // Random function - MUST be before main()
                 float random(float seed) {
@@ -275,9 +275,10 @@
                     
                     float sparkle = random(vInstanceID + t * 1.9);
 
+                    float fadeAlphaMod = (10.0 - fadeAmount + 0.05);
 
-                    vec3 color = vec3(255.0, 100.0,14.0) / 255.0;//*sparkle;
-                    gl_FragColor = vec4(color*alpha, alpha*0.01);
+                    vec3 color = vec3(255.0, 100.0,14.0) / 255.0*sparkle;
+                    gl_FragColor = vec4(color*alpha, alpha*0.4 * fadeAlphaMod);
                 }
             `;
             const particleFragShader = compileShader(gl, gl.FRAGMENT_SHADER, particleFsSource);
@@ -459,7 +460,8 @@
             const particleResLoc = gl.getUniformLocation(particleRenderProgram, 'resolution');
             const particleTexSizeLoc = gl.getUniformLocation(particleRenderProgram, 'particleTexSize');
             const particleSizeLoc = gl.getUniformLocation(particleRenderProgram, 'particleSize');
-            
+            const particleFadeAmountLoc = gl.getUniformLocation(particleRenderProgram, 'fadeAmount');
+
             // Fade trail
             gl.useProgram(fadeTrailProgram);
             const fadeTrailPosLoc = gl.getAttribLocation(fadeTrailProgram, 'aPosition');
@@ -655,6 +657,8 @@
                 gl.uniform2f(particleTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
                 //gl.uniform1f(particleSizeLoc, 0.005);
                 gl.uniform1f(particleSizeLoc, 0.006/simScale);
+                gl.uniform1f(particleFadeAmountLoc, trailFade);
+                
                 // Bind particle position texture
                 gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, particleTextures[currentParticleRead]);
