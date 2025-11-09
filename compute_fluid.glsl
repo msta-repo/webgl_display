@@ -30,8 +30,14 @@ void main() {
     vec2 Step = 1.0 / resolution;
     
     float CScale = 0.5;
-    float K = 0.2;
-    float v = 0.55;
+    //float K = 0.2;
+    //float v = 0.55;
+
+    float K = 0.4;
+    float v = 0.8;
+
+    float kappa = 0.2;
+
     float S = K / dt;
     
     // Sample with wrapping
@@ -59,7 +65,7 @@ void main() {
     // ==================== MASS CONSERVATION ====================
     FC.z -= dt * dot(vec3(DdX, Udiv), FC.xyz);
     
-    float kappa = 0.05;
+    
     float Laplacian_rho = (FR.z + FL.z + FT.z + FD.z) - 4.0 * FC.z;
     FC.z += dt * kappa * Laplacian_rho;
     
