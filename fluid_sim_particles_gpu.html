@@ -219,7 +219,7 @@
             setupMouseHandlers(canvas);
             setupTouchHandlers(canvas);
 
-            const simScale = Math.sqrt(1/3);
+            const simScale = Math.sqrt(1/1);
             const simWidth = Math.floor(window.innerWidth*simScale);
             const simHeight = Math.floor(window.innerHeight*simScale);
 
@@ -311,8 +311,8 @@
                     }
                     let phi = Math.atan2(dy,dx);
 
-                    initialData[idx] = (Math.random()-0.4)*0.5;
-                    initialData[idx + 1] = (Math.random()-0.4)*0.5;
+                    initialData[idx] = (Math.random()-0.5)*0.5*4;
+                    initialData[idx + 1] = (Math.random()-0.5)*0.5*4;
                     initialData[idx + 2] = 1.0;
                     initialData[idx + 3] = Math.pow(Math.sin(x*20)*Math.cos(y*20), 2);
                 }
@@ -455,9 +455,9 @@
             
             const D = 0.045;
             
-            const dt = 0.4;
+            const dt = 0.1;
             
-            const numSubsteps = Math.ceil(dt / 0.1);
+            const numSubsteps = Math.ceil(dt / 0.02);
             
             let t = 0;
             let currentRead = 0;

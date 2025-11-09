@@ -30,8 +30,8 @@ void main() {
     vec2 Step = 1.0 / resolution;
     
     float CScale = 0.5;
-    float K = 0.045;
-    float v = 0.04;
+    float K = 0.2;
+    float v = 0.55;
     float S = K / dt;
     
     // Sample with wrapping
@@ -59,7 +59,7 @@ void main() {
     // ==================== MASS CONSERVATION ====================
     FC.z -= dt * dot(vec3(DdX, Udiv), FC.xyz);
     
-    float kappa = 0.02;
+    float kappa = 0.05;
     float Laplacian_rho = (FR.z + FL.z + FT.z + FD.z) - 4.0 * FC.z;
     FC.z += dt * kappa * Laplacian_rho;
     
@@ -92,7 +92,7 @@ void main() {
         float gaussian = exp(-distSq / (2.0 * sigmaSq));
         
         // Apply velocity scaled by Gaussian
-        ExternalForces += u_mouseVel * gaussian*0.1;
+        ExternalForces += u_mouseVel * gaussian*2.0;
     }
     
     FC.xy += dt * (ViscosityForce - PdX + ExternalForces);
