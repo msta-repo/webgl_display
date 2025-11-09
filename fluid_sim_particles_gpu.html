@@ -519,6 +519,17 @@
                 instanceIDs = createInstanceIDs(PARTICLE_COUNT);
                 gl.bindBuffer(gl.ARRAY_BUFFER, instanceIDBuffer);
                 gl.bufferData(gl.ARRAY_BUFFER, instanceIDs, gl.STATIC_DRAW);
+
+                // Clear trail textures
+                gl.bindFramebuffer(gl.FRAMEBUFFER, trailFramebuffers[0]);
+                gl.clearColor(0.0, 0.0, 0.0, 1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER, trailFramebuffers[1]);
+                gl.clearColor(0.0, 0.0, 0.0, 1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                
+                currentTrailRead = 0;
             });
             
             document.getElementById('trailFade').addEventListener('input', (e) => {
