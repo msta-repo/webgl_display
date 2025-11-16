@@ -106,7 +106,7 @@ void main() {
     // Vorticity confinement based on values stored in alpha
     FC.a = (FR.y - FL.y - FT.x + FD.x);
     vec2 vort = vec2(abs(FT.a) - abs(FD.a), abs(FL.a) - abs(FR.a));
-    float VORTICITY_AMOUNT = 0.004;
+    float VORTICITY_AMOUNT = 0.002;
     vort *= VORTICITY_AMOUNT/length(vort + 1e-9)*FC.w;
     FC.xy += vort;
 

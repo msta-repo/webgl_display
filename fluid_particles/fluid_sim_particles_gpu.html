@@ -172,8 +172,8 @@
                 }
             }
 
-            // Bind textures for reading, return which index will be written to
-            step(uniformLocations) {
+            // prepare textures and framebuffers for read and write
+            swapAndBind(uniformLocations) {
  
                 if(this.depth===3){
                 const currentReadIndex = this.currentReadIndex;
@@ -440,7 +440,6 @@
             let currentParticleRead = 0;
             
             // Trail textures (ping-pong)
-            
             const trailField = new SimField(gl, fadeTrailProgram, simWidth, simHeight, 2)
             
             const trailTextures = trailField.textures;
@@ -586,11 +585,9 @@
                 t = t + dt;
 
                 // ==================== FLUID COMPUTE ====================
-                
-                
                 for (let substep = 0; substep < numSubsteps; substep++) {
 
-                    fluidField.step({
+                    fluidField.swapAndBind({
                         current: computeFieldCurrentLoc,
                         previous: computeFieldPreviousLoc
                     });
@@ -616,30 +613,19 @@
 
                 }
 
-
-
                 // ==================== PARTICLE COMPUTE (GPU) ====================
                 // uses velocity field as input and operates on particle coordinate texture
-                // therefore not simplified using fields
-                const currentFluidTexture = textures[currentRead];
-                const readParticleTexture = particleTextures[currentParticleRead];
-                const writeParticleFramebuffer = particleFramebuffers[1 - currentParticleRead];
-                
-                
-                gl.bindFramebuffer(gl.FRAMEBUFFER, writeParticleFramebuffer);
-                gl.viewport(0, 0, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
-                gl.useProgram(particleComputeProgram);
-                
-                // Bind current particle positions
-                gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, readParticleTexture);
-                gl.uniform1i(particleComputePositionsLoc, 0);
+                particleField.swapAndBind({
+                    current: particleComputePositionsLoc
+                });
                 
                 // Bind velocity field
+                const currentFluidTexture = textures[currentRead];
                 gl.activeTexture(gl.TEXTURE1);
                 gl.bindTexture(gl.TEXTURE_2D, currentFluidTexture);
                 gl.uniform1i(particleComputeVelocityLoc, 1);
                 
+                // other uniforms1
                 gl.uniform2f(particleComputeTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
                 gl.uniform1f(particleComputeDtLoc, dt); 
                 gl.uniform1f(particleComputetLoc, t);
@@ -649,29 +635,14 @@
                 gl.vertexAttribPointer(particleComputePosLoc, 2, gl.FLOAT, false, 0, 0);
                 
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-                
-                // Swap particle buffers
-                currentParticleRead = 1 - currentParticleRead;
 
                 // ==================== TRAIL FADE PASS ====================
-                const readTrailTexture = trailTextures[currentTrailRead];
-                const writeTrailFramebuffer = trailFramebuffers[1 - currentTrailRead];
-                
-                gl.bindFramebuffer(gl.FRAMEBUFFER, writeTrailFramebuffer);
-                //gl.viewport(0, 0, canvas.width, canvas.height);
-                gl.viewport(0, 0, simWidth, simHeight);
-                gl.useProgram(fadeTrailProgram);
-                
-                gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, readTrailTexture);
-                gl.uniform1i(fadeTrailPrevLoc, 0);
-                //gl.uniform2f(fadeTrailResLoc, canvas.width, canvas.height);
+                trailField.swapAndBind({
+                    current: fadeTrailPrevLoc
+                })
+
                 gl.uniform2f(fadeTrailResLoc, simWidth, simHeight);
-                gl.uniform1f(fadeTrailAmountLoc, trailFade);
-                
-                //gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-                //gl.enableVertexAttribArray(fadeTrailPosLoc);
-                //gl.vertexAttribPointer(fadeTrailPosLoc, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform1f(fadeTrailAmountLoc, trailFade); 
                 
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
                 
@@ -712,12 +683,10 @@
                 instancingExt.vertexAttribDivisorANGLE(particleInstanceIDLoc, 0);
                 gl.disable(gl.BLEND);
                 
-                // Swap trail buffers
-                currentTrailRead = 1 - currentTrailRead;
+
 
                 // ==================== COMPOSITE DISPLAY ====================
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-                //gl.viewport(0, 0, canvas.width, canvas.height);
                 gl.viewport(0, 0, canvas.width,  canvas.height);
                 gl.useProgram(displayCompositeProgram);
                 
