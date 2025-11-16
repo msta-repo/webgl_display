@@ -134,6 +134,91 @@
             });
         }
 
+
+        // simulation field class
+        class SimField {
+            constructor(gl, program, width, height, depth) {
+                this.gl = gl;
+                this.program = program;
+                this.height = height;
+                this.width = width;
+                this.depth = depth;
+
+                this.currentReadIndex = 0; // indicates in which order the textures and framebuffers are used
+
+                // Initialize textures and framebuffers
+                this.textures = [];
+                this.framebuffers = [];
+                for (let i = 0; i < depth; i++){
+                    this.textures[i] = createTexture(gl, width, height, null);  // Fixed: use i
+                    this.framebuffers[i] = createFramebuffer(gl, this.textures[i]);  // Fixed: use i
+                }
+            }
+
+            setTextureData(id, data){
+                // Delete old texture and framebuffer first
+                this.gl.deleteTexture(this.textures[id]);
+                this.gl.deleteFramebuffer(this.framebuffers[id]);
+                
+                // Create new ones with data
+                this.textures[id] = createTexture(this.gl, this.width, this.height, data);
+                this.framebuffers[id] = createFramebuffer(this.gl, this.textures[id]);
+            }
+
+            clear(){
+                for (let i = 0; i<this.depth; i++){
+                    this.gl.deleteTexture(this.textures[i]);
+                    this.gl.deleteFramebuffer(this.framebuffers[i]);
+                }
+            }
+
+            // Bind textures for reading, return which index will be written to
+            step(uniformLocations) {
+ 
+                if(this.depth===3){
+                const currentReadIndex = this.currentReadIndex;
+                const previousReadIndex = (this.currentReadIndex + 1) % this.depth;
+                const nextWriteIndex = (this.currentReadIndex + 2) % this.depth;
+                
+                // Bind framebuffer for writing
+                this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.framebuffers[nextWriteIndex]);
+                this.gl.viewport(0, 0, this.width, this.height);
+                this.gl.useProgram(this.program);
+                
+                // Bind read textures to texture units
+                this.gl.activeTexture(this.gl.TEXTURE0);
+                this.gl.bindTexture(this.gl.TEXTURE_2D, this.textures[currentReadIndex]);
+                this.gl.uniform1i(uniformLocations.current, 0);  // Tell shader: use slot 0
+                
+                this.gl.activeTexture(this.gl.TEXTURE1);
+                this.gl.bindTexture(this.gl.TEXTURE_2D, this.textures[previousReadIndex]);
+                this.gl.uniform1i(uniformLocations.previous, 1);  // Tell shader: use slot 1
+                
+                // Update internal state
+                this.currentReadIndex = nextWriteIndex;
+
+                
+                return nextWriteIndex;  // Return for external tracking if needed
+                } else if (this.depth === 2) {
+                    const readIndex = this.currentReadIndex;
+                    const writeIndex = 1 - this.currentReadIndex;
+                    
+                    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.framebuffers[writeIndex]);
+                    this.gl.viewport(0, 0, this.width, this.height);
+                    this.gl.useProgram(this.program);
+                    
+                    this.gl.activeTexture(this.gl.TEXTURE0);
+                    this.gl.bindTexture(this.gl.TEXTURE_2D, this.textures[readIndex]);
+                    this.gl.uniform1i(uniformLocations.current, 0);
+                    
+                    this.currentReadIndex = writeIndex;
+                    return writeIndex;
+                }
+
+            } 
+
+        }
+
         async function loadShaderSource(url) {
             const response = await fetch(url);
             if (!response.ok) {
@@ -187,6 +272,11 @@
         async function init() {
             const canvas = document.getElementById('glCanvas');
             const gl = canvas.getContext('webgl');
+
+            const vertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+            const vertexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
             if (!gl) {
                 console.error('WebGL not supported');
@@ -296,21 +386,11 @@
                 }
             }
             
-            const texture0 = createTexture(gl, simWidth, simHeight, initialData);
-            const texture1 = createTexture(gl, simWidth, simHeight, null);
-            const texture2 = createTexture(gl, simWidth, simHeight, null);
+            const fluidField = new SimField(gl, computeProgram, simWidth, simHeight, 3);
 
-            const framebuffer0 = createFramebuffer(gl, texture0);
-            const framebuffer1 = createFramebuffer(gl, texture1);
-            const framebuffer2 = createFramebuffer(gl, texture2);
-            
-            const textures = [texture0, texture1, texture2];
-            const framebuffers = [framebuffer0, framebuffer1, framebuffer2];
-
-            const vertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
-            const vertexBuffer = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+            fluidField.setTextureData(0, initialData);
+            textures = fluidField.textures;
+            framebuffers = fluidField.framebuffers;
 
             // ==================== PARTICLE SETUP ====================
             // Get initial particle count from UI
@@ -319,8 +399,6 @@
             let PARTICLE_TEX_HEIGHT = Math.ceil(PARTICLE_COUNT / PARTICLE_TEX_WIDTH);
             PARTICLE_COUNT = PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT; // Adjust to fit texture
             
-            
-
             function initializeParticles() {
                 // Initialize particle positions on a grid
                 const particleInitialData = new Float32Array(PARTICLE_TEX_WIDTH * PARTICLE_TEX_HEIGHT * 4);
@@ -354,28 +432,19 @@
             
             let particleInitialData = initializeParticles();
             
-            // Particle position textures (ping-pong)
-            let particleTex0 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, particleInitialData);
-            let particleTex1 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, null);
-            
-            let particleFb0 = createFramebuffer(gl, particleTex0);
-            let particleFb1 = createFramebuffer(gl, particleTex1);
-            
-            let particleTextures = [particleTex0, particleTex1];
-            let particleFramebuffers = [particleFb0, particleFb1];
+            let particleField = new SimField(gl, particleComputeProgram, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, 2);    
+            particleField.setTextureData(0, particleInitialData);
+ 
+            let particleTextures = particleField.textures;
+            let particleFramebuffers = particleField.framebuffers;
             let currentParticleRead = 0;
             
             // Trail textures (ping-pong)
-            //const trailTex0 = createTexture(gl, canvas.width, canvas.height, null);
-            //const trailTex1 = createTexture(gl, canvas.width, canvas.height, null);
-
-            const trailTex0 = createTexture(gl, simWidth, simHeight, null);
-            const trailTex1 = createTexture(gl, simWidth, simHeight, null);
-            const trailFb0 = createFramebuffer(gl, trailTex0);
-            const trailFb1 = createFramebuffer(gl, trailTex1);
             
-            const trailTextures = [trailTex0, trailTex1];
-            const trailFramebuffers = [trailFb0, trailFb1];
+            const trailField = new SimField(gl, fadeTrailProgram, simWidth, simHeight, 2)
+            
+            const trailTextures = trailField.textures;
+            const trailFramebuffers = trailField.framebuffers;
             let currentTrailRead = 0;
             
             // Quad for particle sprite
@@ -460,8 +529,7 @@
             
             const numSubsteps = Math.ceil(dt / 0.02);
             
-            let t = 0;
-            let currentRead = 0;
+            
             
             // Trail parameters
             let trailFade = parseFloat(document.getElementById('trailFade').value);
@@ -479,20 +547,14 @@
                 particleInitialData = initializeParticles();
                 
                 // Delete old textures and framebuffers
-                gl.deleteTexture(particleTextures[0]);
-                gl.deleteTexture(particleTextures[1]);
-                gl.deleteFramebuffer(particleFramebuffers[0]);
-                gl.deleteFramebuffer(particleFramebuffers[1]);
+                particleField.clear()
                 
                 // Create new ones
-                particleTex0 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, particleInitialData);
-                particleTex1 = createTexture(gl, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, null);
-                particleFb0 = createFramebuffer(gl, particleTex0);
-                particleFb1 = createFramebuffer(gl, particleTex1);
-                particleTextures[0] = particleTex0;
-                particleTextures[1] = particleTex1;
-                particleFramebuffers[0] = particleFb0;
-                particleFramebuffers[1] = particleFb1;
+                particleField = new SimField(gl, particleComputeProgram,  PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, 2);
+                particleField.setTextureData(0, particleInitialData);
+                particleTextures = particleField.textures;
+                particleFramebuffers = particleField.framebuffers;
+
                 currentParticleRead = 0;
                 
                 // Update instance IDs
@@ -517,6 +579,9 @@
                 document.getElementById('trailFadeDisplay').textContent = trailFade.toFixed(3);
             });
 
+            let t = 0;
+            let currentRead = 0;
+
             function render() {
                 t = t + dt;
 
@@ -524,25 +589,12 @@
                 
                 
                 for (let substep = 0; substep < numSubsteps; substep++) {
-                    const readCurrentIndex = currentRead;
-                    const readPreviousIndex = (currentRead + 1) % 3;
-                    const writeNextIndex = (currentRead + 2) % 3;
-                    
-                    const readCurrentTexture = textures[readCurrentIndex];
-                    const readPreviousTexture = textures[readPreviousIndex];
-                    const writeNextFramebuffer = framebuffers[writeNextIndex];
 
-                    gl.bindFramebuffer(gl.FRAMEBUFFER, writeNextFramebuffer);
-                    gl.viewport(0, 0, simWidth, simHeight);
-                    gl.useProgram(computeProgram);
+                    fluidField.step({
+                        current: computeFieldCurrentLoc,
+                        previous: computeFieldPreviousLoc
+                    });
 
-                    gl.activeTexture(gl.TEXTURE0);
-                    gl.bindTexture(gl.TEXTURE_2D, readCurrentTexture);
-                    gl.uniform1i(computeFieldCurrentLoc, 0);
-
-                    gl.activeTexture(gl.TEXTURE1);
-                    gl.bindTexture(gl.TEXTURE_2D, readPreviousTexture);
-                    gl.uniform1i(computeFieldPreviousLoc, 1);
                     
                     gl.uniform2f(computeResLoc, simWidth, simHeight);
                     gl.uniform1f(computeDtLoc, dt / numSubsteps);  
@@ -560,19 +612,19 @@
                         gl.uniform1i(computeMouseActiveLoc, 0);
                     }
 
-                    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-                    gl.enableVertexAttribArray(computePosLoc);
-                    gl.vertexAttribPointer(computePosLoc, 2, gl.FLOAT, false, 0, 0);
-
                     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-                    currentRead = writeNextIndex;
                 }
 
+
+
                 // ==================== PARTICLE COMPUTE (GPU) ====================
+                // uses velocity field as input and operates on particle coordinate texture
+                // therefore not simplified using fields
                 const currentFluidTexture = textures[currentRead];
                 const readParticleTexture = particleTextures[currentParticleRead];
                 const writeParticleFramebuffer = particleFramebuffers[1 - currentParticleRead];
+                
                 
                 gl.bindFramebuffer(gl.FRAMEBUFFER, writeParticleFramebuffer);
                 gl.viewport(0, 0, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
@@ -589,10 +641,10 @@
                 gl.uniform1i(particleComputeVelocityLoc, 1);
                 
                 gl.uniform2f(particleComputeTexSizeLoc, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
-                gl.uniform1f(particleComputeDtLoc, dt);
+                gl.uniform1f(particleComputeDtLoc, dt); 
                 gl.uniform1f(particleComputetLoc, t);
 
-                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer); // cannot be removed
                 gl.enableVertexAttribArray(particleComputePosLoc);
                 gl.vertexAttribPointer(particleComputePosLoc, 2, gl.FLOAT, false, 0, 0);
                 
@@ -617,9 +669,9 @@
                 gl.uniform2f(fadeTrailResLoc, simWidth, simHeight);
                 gl.uniform1f(fadeTrailAmountLoc, trailFade);
                 
-                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-                gl.enableVertexAttribArray(fadeTrailPosLoc);
-                gl.vertexAttribPointer(fadeTrailPosLoc, 2, gl.FLOAT, false, 0, 0);
+                //gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                //gl.enableVertexAttribArray(fadeTrailPosLoc);
+                //gl.vertexAttribPointer(fadeTrailPosLoc, 2, gl.FLOAT, false, 0, 0);
                 
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
                 
@@ -681,7 +733,7 @@
                 gl.bindTexture(gl.TEXTURE_2D, trailTextures[currentTrailRead]);
                 gl.uniform1i(compositeTrailLoc, 1);
                 
-                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer); // cannot be removed
                 gl.enableVertexAttribArray(compositePosLoc);
                 gl.vertexAttribPointer(compositePosLoc, 2, gl.FLOAT, false, 0, 0);
                 
