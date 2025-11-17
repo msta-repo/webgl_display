@@ -33,13 +33,15 @@ void main() {
     vec2 Step = 1.0 / resolution;
     
     float CScale = 0.5;
-    float K = 0.2;
-    float v = 0.55;
+    //float K = 0.2;
+    //float v = 0.55;
 
-    //float K = 0.4;
-    //float v = 0.8;
+    //float K = 0.2;
+    //float v = 0.2;
+    float K = 0.4;
+    float v = 0.8;
 
-    float kappa = 0.0;
+    float kappa = 0.2;
 
     float S = K / dt;
     
@@ -59,8 +61,8 @@ void main() {
     vec4 FDD = texture2D(fields_current, wrap(texCoord - vec2(0.0, 2.0 * Step.y)));
     
     // ==================== SPATIAL DERIVATIVES ====================
-    vec3 UdX = (-FRR.xyz + 8.0 * FR.xyz - 8.0 * FL.xyz + FLL.xyz) / 12.0;
-    vec3 UdY = (-FTT.xyz + 8.0 * FT.xyz - 8.0 * FD.xyz + FDD.xyz) / 12.0;
+    vec3 UdX = (-FRR.xyz + 8.0 * FR.xyz - 8.0 * FL.xyz + FLL.xyz) / (12.0);
+    vec3 UdY = (-FTT.xyz + 8.0 * FT.xyz - 8.0 * FD.xyz + FDD.xyz) / (12.0);
     
     float Udiv = UdX.x + UdY.y;
     vec2 DdX = vec2(UdX.z, UdY.z);
@@ -115,7 +117,7 @@ void main() {
     // Vorticity confinement based on values stored in alpha
     FC.a = (FR.y - FL.y - FT.x + FD.x);
     vec2 vort = vec2(abs(FT.a) - abs(FD.a), abs(FL.a) - abs(FR.a));
-    float VORTICITY_AMOUNT = 0.004;
+    float VORTICITY_AMOUNT = 0.003;
     vort *= VORTICITY_AMOUNT/length(vort + 1e-9)*FC.w;
     FC.xy += vort;
 

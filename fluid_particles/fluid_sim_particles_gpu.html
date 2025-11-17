@@ -320,7 +320,7 @@
             setupMouseHandlers(canvas);
             setupTouchHandlers(canvas);
 
-            const simScale = Math.sqrt(1);
+            const simScale = Math.sqrt(1/6);
             const simWidth = Math.floor(window.innerWidth*simScale);
             const simHeight = Math.floor(window.innerHeight*simScale);
 
@@ -390,11 +390,13 @@
             const simParams = {
                 D: 0.045,
                 dt: 0.24,
-                get numSubsteps() { return Math.ceil(this.dt / 0.08); },
+                get numSubsteps() { return Math.ceil(this.dt / 0.12); },
                 trailFade: parseFloat(document.getElementById('trailFade').value),
-                omega: 1.75,
+                omega: 1.7,
                 PRESSURE_ITERATIONS: 13,
-                pressure_project: 0.0
+                pressure_project: 1.0, 
+                pressureResolutionFactor: 12,
+                usePeriodic: 1.0
             };
 
             // Initialize fluid field
@@ -459,7 +461,8 @@
             particleField.setTextureData(0, particleInitialData);
             
             // pressure 
-            let pressureField = new SimField(gl, pressureComputeProgram, simWidth, simHeight, 2); 
+
+            let pressureField = new SimField(gl, pressureComputeProgram, Math.floor(simWidth/simParams.pressureResolutionFactor), Math.floor(simHeight/simParams.pressureResolutionFactor), 2); 
 
 
             // Trail textures
@@ -513,8 +516,8 @@
                 resolution: gl.getUniformLocation(pressureComputeProgram, 'resolution'),
                 usePeriodic: gl.getUniformLocation(pressureComputeProgram, 'usePeriodic'),
                 omega: gl.getUniformLocation(pressureComputeProgram, 'omega'),
-                redOrBlack: gl.getUniformLocation(pressureComputeProgram, 'redOrBlack')
-                
+                redOrBlack: gl.getUniformLocation(pressureComputeProgram, 'redOrBlack'),
+                pressureResolutionFactor: gl.getUniformLocation(pressureComputeProgram, 'pressureResolutionFactor')
             }
 
             // pressure projection uniforms
@@ -526,6 +529,8 @@
                 resolution: gl.getUniformLocation(gradientSubtractProgram, 'resolution'),
                 usePeriodic: gl.getUniformLocation(gradientSubtractProgram, 'usePeriodic'),
                 omega: gl.getUniformLocation(gradientSubtractProgram, 'omega'),
+                pressureResolutionFactor: gl.getUniformLocation(gradientSubtractProgram, 'pressureResolutionFactor')
+                
             }
 
             // Fluid display uniforms
@@ -632,7 +637,7 @@
                     gl.uniform1f(fluidUniforms.dt, simParams.dt / simParams.numSubsteps);  
                     gl.uniform1f(fluidUniforms.D, simParams.D);
                     gl.uniform1f(fluidUniforms.t, t + substep * simParams.dt / simParams.numSubsteps);
-                    gl.uniform1f(fluidUniforms.usePeriodic, 1.0);
+                    gl.uniform1f(fluidUniforms.usePeriodic, simParams.usePeriodic);
                     gl.uniform1f(fluidUniforms.pressure_project, simParams.pressure_project)
 
                     setMouseUniforms(gl, fluidUniforms);
@@ -661,6 +666,7 @@
 
                         gl.uniform1f(pressureUniforms.usePeriodic, 1.0);
                         gl.uniform1f(pressureUniforms.omega, simParams.omega);
+                        gl.uniform1f(pressureUniforms.pressureResolutionFactor, simParams.pressureResolutionFactor);
 
                         gl.uniform1i(pressureUniforms.redOrBlack, iter % 2);
                         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -687,6 +693,7 @@
 
                     gl.uniform2f(gradientSubtractUniforms.resolution, simWidth, simHeight);
                     gl.uniform1f(gradientSubtractUniforms.usePeriodic, 1.0);
+                    gl.uniform1f(gradientSubtractUniforms.pressureResolutionFactor, simParams.pressureResolutionFactor);
 
                     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -739,7 +746,7 @@
                 gl.useProgram(particleRenderProgram);
                 gl.uniform2f(particleRenderUniforms.resolution, simWidth, simHeight);
                 gl.uniform2f(particleRenderUniforms.texSize, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
-                gl.uniform1f(particleRenderUniforms.size, 0.02/simScale);
+                gl.uniform1f(particleRenderUniforms.size, 0.04/simScale);
                 gl.uniform1f(particleRenderUniforms.fadeAmount, simParams.trailFade);
                 gl.uniform1f(particleRenderUniforms.t, t);
 

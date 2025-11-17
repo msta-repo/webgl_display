@@ -7,6 +7,8 @@ precision mediump float;
 uniform sampler2D fields_current; // uncorrected velocity fields
 uniform sampler2D pressure;       // pressure field
 
+uniform float pressureResolutionFactor;
+
 uniform vec2 resolution;
 
 varying float vX;
@@ -21,7 +23,7 @@ vec2 wrap(vec2 coord) {
 
 void main() {
     vec2 texCoord = (vec2(vX, vY) + 1.0) / 2.0;
-    vec2 Step = 1.0 / resolution;
+    vec2 Step = 1.0 / (resolution/pressureResolutionFactor);
     
     float CScale = 0.5;
     
