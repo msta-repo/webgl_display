@@ -33,15 +33,15 @@ void main() {
     vec2 Step = 1.0 / resolution;
     
     float CScale = 0.5;
-    //float K = 0.2;
-    //float v = 0.55;
+    float K = 0.2;
+    float v = 0.55;
 
     //float K = 0.2;
     //float v = 0.2;
-    float K = 0.4;
-    float v = 0.8;
+    //float K = 0.4;
+    //float v = 0.8;
 
-    float kappa = 0.2;
+    float kappa = 0.0;
 
     float S = K / dt;
     

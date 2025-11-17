@@ -36,6 +36,7 @@ void main() {
 
 
     vec3 fluid = vec3(0.7, 0.0,0.7)*density_factor;
+    //vec3 fluid = vec3(108.0, 0.0,166.0)*density_factor;
 
     vec3 vort = vec3(0.0,0.0,0.3)*squeeze(FC.a, 0.0,0.3);
 
