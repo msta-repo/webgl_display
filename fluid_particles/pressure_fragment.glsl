@@ -34,10 +34,10 @@ void main() {
 
 
     // Sample pressure
-    vec4 p = texture2D(pressure, wrap(texCoord));
+    vec4 p = texture2D(fields_current, wrap(texCoord));
     
     // Sample with wrapping
-    vec4 FC = texture2D(fields_current, wrap(texCoord));
+    vec4 FC = texture2D(velocity, wrap(texCoord));
     
     // Standard neighbors with wrapping
     vec4 FR = texture2D(fields_current, wrap(texCoord + vec2(Step.x, 0.0)));
