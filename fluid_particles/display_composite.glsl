@@ -6,6 +6,8 @@
 
 uniform sampler2D fluidTexture;
 uniform sampler2D trailTexture;
+uniform sampler2D pressureTexture;
+
 uniform vec2 resolution;
 
 
@@ -46,7 +48,10 @@ void main() {
     vec3 finalColor = mix( mix(fluid.rgb*1.1, vort.rgb, 0.4),  trail.rgb, 0.4)  ;
     //vec3 finalColor = fluid;
 
+    //finalColor = mix( vec3(squeeze(FC.r, -10.0,10.0), 0.0,0.0),  trail.rgb, 0.4)  ;
+    
     //gl_FragColor = vec4(finalColor, 1.0);
+   
 
     gl_FragColor = vec4(finalColor, 1.0);
 

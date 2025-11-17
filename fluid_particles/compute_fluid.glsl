@@ -14,6 +14,9 @@ varying float vY;
 
 uniform float usePeriodic; 
 
+uniform float pressure_project;
+
+
 // Mouse interaction uniforms
 uniform int u_mouseActive;
 uniform vec2 u_mousePos;
@@ -30,13 +33,13 @@ void main() {
     vec2 Step = 1.0 / resolution;
     
     float CScale = 0.5;
-    //float K = 0.2;
-    //float v = 0.55;
+    float K = 0.2;
+    float v = 0.55;
 
-    float K = 0.4;
-    float v = 0.8;
+    //float K = 0.4;
+    //float v = 0.8;
 
-    float kappa = 0.2;
+    float kappa = 0.0;
 
     float S = K / dt;
     
@@ -62,9 +65,15 @@ void main() {
     float Udiv = UdX.x + UdY.y;
     vec2 DdX = vec2(UdX.z, UdY.z);
     
+    // advection coordinates
+    vec2 Was = wrap(texCoord - dt * FC.xy * Step);
+
     // ==================== MASS CONSERVATION ====================
-    FC.z -= dt * dot(vec3(DdX, Udiv), FC.xyz);
     
+    FC.z = FC.z*(1.0  -pressure_project) + pressure_project* texture2D(fields_current, Was).z;
+    FC.z -= dt * dot(vec3(DdX, Udiv), FC.xyz) * (1.0 - pressure_project);
+    
+    //FC.z -= dt * dot(vec3(DdX, Udiv), FC.xyz);
     
     float Laplacian_rho = (FR.z + FL.z + FT.z + FD.z) - 4.0 * FC.z;
     FC.z += dt * kappa * Laplacian_rho;
@@ -72,14 +81,14 @@ void main() {
     FC.z = clamp(FC.z, 0.5, 3.0);
     
     // ==================== MOMENTUM CONSERVATION ====================
-    vec2 PdX = S * DdX;
+    vec2 PdX = S * DdX * (1.0 - pressure_project);
     vec2 Laplacian = (FR.xy + FL.xy + FT.xy + FD.xy) - 4.0 * FC.xy;
     vec2 ViscosityForce = v * Laplacian;
     
    
 
     // Semi-Lagrangian advection with wrapping
-    vec2 Was = wrap(texCoord - dt * FC.xy * Step);
+    
     FC.xy = texture2D(fields_current, Was).xy;
     
     float force_strength = exp(-dot(texCoord.xy-0.5, texCoord.xy-0.5)/0.005);
@@ -106,7 +115,7 @@ void main() {
     // Vorticity confinement based on values stored in alpha
     FC.a = (FR.y - FL.y - FT.x + FD.x);
     vec2 vort = vec2(abs(FT.a) - abs(FD.a), abs(FL.a) - abs(FR.a));
-    float VORTICITY_AMOUNT = 0.002;
+    float VORTICITY_AMOUNT = 0.004;
     vort *= VORTICITY_AMOUNT/length(vort + 1e-9)*FC.w;
     FC.xy += vort;
 

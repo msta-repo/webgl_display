@@ -41,8 +41,8 @@
             <input type="range" id="particleCount" min="256" max="32768" step="256" value="15000">
         </label>
         <label>
-            Trail Fade: <span id="trailFadeDisplay">9.7</span>
-            <input type="range" id="trailFade" min="0.0" max="9.999" step="0.00005" value="9.7">
+            Trail Fade: <span id="trailFadeDisplay">9.99</span>
+            <input type="range" id="trailFade" min="0.0" max="9.999" step="0.00005" value="9.99">
         </label>
     </div>
     <script>
@@ -389,11 +389,12 @@
             // Simulation parameters
             const simParams = {
                 D: 0.045,
-                dt: 0.16,
-                get numSubsteps() { return Math.ceil(this.dt / 0.02); },
+                dt: 0.24,
+                get numSubsteps() { return Math.ceil(this.dt / 0.08); },
                 trailFade: parseFloat(document.getElementById('trailFade').value),
-                omega: 1.7,
-                PRESSURE_ITERATIONS: 30
+                omega: 1.75,
+                PRESSURE_ITERATIONS: 13,
+                pressure_project: 0.0
             };
 
             // Initialize fluid field
@@ -499,7 +500,8 @@
                 mouseActive: gl.getUniformLocation(computeProgram, 'u_mouseActive'),
                 mousePos: gl.getUniformLocation(computeProgram, 'u_mousePos'),
                 mouseVel: gl.getUniformLocation(computeProgram, 'u_mouseVel'),
-                mouseRadius: gl.getUniformLocation(computeProgram, 'u_mouseRadius')
+                mouseRadius: gl.getUniformLocation(computeProgram, 'u_mouseRadius'),
+                pressure_project: gl.getUniformLocation(computeProgram, 'pressure_project')
             };
 
             // pressure projection uniforms
@@ -631,11 +633,13 @@
                     gl.uniform1f(fluidUniforms.D, simParams.D);
                     gl.uniform1f(fluidUniforms.t, t + substep * simParams.dt / simParams.numSubsteps);
                     gl.uniform1f(fluidUniforms.usePeriodic, 1.0);
-                    
+                    gl.uniform1f(fluidUniforms.pressure_project, simParams.pressure_project)
+
                     setMouseUniforms(gl, fluidUniforms);
 
                     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
+                    if (simParams.pressure_project === 1.0){
                     // insert pressure projection
                     pressureField.swapAndBind({
                         current: pressureUniforms.fieldCurrent
@@ -689,7 +693,7 @@
                     // Update fluid field index
                     fluidField.currentReadIndex = nextFluidIndex;
 
-
+                    }
 
                 }
 
@@ -776,6 +780,8 @@
                 gl.activeTexture(gl.TEXTURE1);
                 gl.bindTexture(gl.TEXTURE_2D, trailField.getCurrentTexture());
                 gl.uniform1i(compositeUniforms.trail, 1);
+                
+                
                 
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
                 gl.enableVertexAttribArray(compositeUniforms.pos);
