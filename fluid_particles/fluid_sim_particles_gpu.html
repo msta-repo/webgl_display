@@ -345,6 +345,10 @@
                 fadeTrailSource = await loadShaderSource("fade_trail.glsl");
                 displayCompositeSource = await loadShaderSource("display_composite.glsl");
                 particleFsSource = await loadShaderSource("particle_fragment.glsl");
+
+                pressureProjectFsSource = await loadShaderSource("pressure_fragment.glsl");
+                gradientSubtractFsSource = await loadShaderSource("gradient_subtract.glsl");
+
             } catch (error) {
                 console.error("Error loading shaders:", error);
                 return;
@@ -361,15 +365,21 @@
             const displayCompositeFragShader = compileShader(gl, gl.FRAGMENT_SHADER, displayCompositeSource);
             const particleFragShader = compileShader(gl, gl.FRAGMENT_SHADER, particleFsSource);
 
+            const pressureFragShader = compileShader(gl, gl.FRAGMENT_SHADER, pressureProjectFsSource);
+            const gradientSubtractShader = compileShader(gl, gl.FRAGMENT_SHADER, gradientSubtractFsSource)
+
             if (!vertexShader || !writeFragShader || !computeFragShader || !displayFragShader || 
                 !particleComputeFragShader || !particleVertexShader || !particleFragShader ||
-                !fadeTrailFragShader || !displayCompositeFragShader) {
+                !fadeTrailFragShader || !displayCompositeFragShader || !pressureFragShader || !gradientSubtractShader) {
                 console.error("Shader compilation failed!");
                 return;
             }
 
             // Create programs
             const computeProgram = createProgram(gl, vertexShader, computeFragShader);
+            const pressureComputeProgram = createProgram(gl, vertexShader, pressureFragShader);
+            const gradientSubtractProgram = createProgram(gl, vertexShader, gradientSubtractShader);
+
             const displayProgram = createProgram(gl, vertexShader, displayFragShader);
             const particleComputeProgram = createProgram(gl, vertexShader, particleComputeFragShader);
             const particleRenderProgram = createProgram(gl, particleVertexShader, particleFragShader);
@@ -381,7 +391,9 @@
                 D: 0.045,
                 dt: 0.16,
                 get numSubsteps() { return Math.ceil(this.dt / 0.02); },
-                trailFade: parseFloat(document.getElementById('trailFade').value)
+                trailFade: parseFloat(document.getElementById('trailFade').value),
+                omega: 1.7,
+                PRESSURE_ITERATIONS: 30
             };
 
             // Initialize fluid field
@@ -445,6 +457,10 @@
             let particleField = new SimField(gl, particleComputeProgram, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT, 2);    
             particleField.setTextureData(0, particleInitialData);
             
+            // pressure 
+            let pressureField = new SimField(gl, pressureComputeProgram, simWidth, simHeight, 2); 
+
+
             // Trail textures
             const trailField = new SimField(gl, fadeTrailProgram, simWidth, simHeight, 2);
             
@@ -485,6 +501,30 @@
                 mouseVel: gl.getUniformLocation(computeProgram, 'u_mouseVel'),
                 mouseRadius: gl.getUniformLocation(computeProgram, 'u_mouseRadius')
             };
+
+            // pressure projection uniforms
+            gl.useProgram(pressureComputeProgram);
+            const pressureUniforms = {
+                pos: gl.getAttribLocation(pressureComputeProgram, 'aPosition'),
+                fieldCurrent: gl.getUniformLocation(pressureComputeProgram, 'fields_current'),
+                velocity: gl.getUniformLocation(pressureComputeProgram, 'velocity'),
+                resolution: gl.getUniformLocation(pressureComputeProgram, 'resolution'),
+                usePeriodic: gl.getUniformLocation(pressureComputeProgram, 'usePeriodic'),
+                omega: gl.getUniformLocation(pressureComputeProgram, 'omega'),
+                redOrBlack: gl.getUniformLocation(pressureComputeProgram, 'redOrBlack')
+                
+            }
+
+            // pressure projection uniforms
+            gl.useProgram(gradientSubtractProgram);
+            const gradientSubtractUniforms = {
+                pos: gl.getAttribLocation(gradientSubtractProgram, 'aPosition'),
+                fieldCurrent: gl.getUniformLocation(gradientSubtractProgram, 'fields_current'),
+                pressure: gl.getUniformLocation(gradientSubtractProgram, 'pressure'),
+                resolution: gl.getUniformLocation(gradientSubtractProgram, 'resolution'),
+                usePeriodic: gl.getUniformLocation(gradientSubtractProgram, 'usePeriodic'),
+                omega: gl.getUniformLocation(gradientSubtractProgram, 'omega'),
+            }
 
             // Fluid display uniforms
             gl.useProgram(displayProgram);
@@ -575,6 +615,7 @@
 
             let t = 0;
 
+
             function render() {
                 t = t + simParams.dt;
 
@@ -594,7 +635,68 @@
                     setMouseUniforms(gl, fluidUniforms);
 
                     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                    // insert pressure projection
+                    pressureField.swapAndBind({
+                        current: pressureUniforms.fieldCurrent
+                    });
+
+                    // bind velocity field from fluid texture
+                    gl.activeTexture(gl.TEXTURE1);
+                    gl.bindTexture(gl.TEXTURE_2D, fluidField.getCurrentTexture());
+                    gl.uniform1i(pressureUniforms.velocity,1);
+
+                    // set pressure projection uniforms
+                    
+                    for (let iter = 0; iter < simParams.PRESSURE_ITERATIONS; iter++) {
+                        pressureField.swapAndBind({
+                            current: pressureUniforms.fieldCurrent
+                        });
+
+                        gl.uniform2f(pressureUniforms.resolution, simWidth, simHeight);
+
+                        gl.uniform1f(pressureUniforms.usePeriodic, 1.0);
+                        gl.uniform1f(pressureUniforms.omega, simParams.omega);
+
+                        gl.uniform1i(pressureUniforms.redOrBlack, iter % 2);
+                        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                    }
+                    
+                    // gradient subtract shader calculation
+                    // reads update velocities from pressureField and writes to fluid computation shader framebuffer
+
+                    // After pressure iterations, swap fluid field one more time
+                    const nextFluidIndex = (fluidField.currentReadIndex + 2) % 3;
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, fluidField.framebuffers[nextFluidIndex]);
+                    gl.viewport(0, 0, simWidth, simHeight);
+                    gl.useProgram(gradientSubtractProgram);
+
+                    // Bind OLD velocity (from fluid compute)
+                    gl.activeTexture(gl.TEXTURE0);
+                    gl.bindTexture(gl.TEXTURE_2D, fluidField.getCurrentTexture());
+                    gl.uniform1i(gradientSubtractUniforms.fieldCurrent, 0);
+
+                    // Bind pressure
+                    gl.activeTexture(gl.TEXTURE1);
+                    gl.bindTexture(gl.TEXTURE_2D, pressureField.getCurrentTexture());
+                    gl.uniform1i(gradientSubtractUniforms.pressure, 1);
+
+                    gl.uniform2f(gradientSubtractUniforms.resolution, simWidth, simHeight);
+                    gl.uniform1f(gradientSubtractUniforms.usePeriodic, 1.0);
+
+                    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                    // Update fluid field index
+                    fluidField.currentReadIndex = nextFluidIndex;
+
+
+
                 }
+
+
+                
+
+
 
                 // ==================== PARTICLE COMPUTE (GPU) ====================
                 particleField.swapAndBind({
