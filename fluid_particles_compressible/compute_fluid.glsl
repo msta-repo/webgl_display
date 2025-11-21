@@ -72,17 +72,41 @@ vec4 calculateFlux(vec4 state, bool xDirection) {
     return flux;
 }
 
-// Lax-Friedrichs flux at cell edges
+// Lax-Friedrichs flux at cell edges with wave-speed-based diffusion
 vec4 laxFriedrichsFlux(vec4 stateLeft, vec4 stateRight, bool xDirection) {
     vec4 fluxLeft = calculateFlux(stateLeft, xDirection);
     vec4 fluxRight = calculateFlux(stateRight, xDirection);
 
-    // Lax-Friedrichs: F_avg - (dx/2dt) * (U_right - U_left)
-    vec4 avgFlux = 0.5 * (fluxLeft + fluxRight);
-    vec4 diffusion = 0.5 * (dx / dt) * (stateRight - stateLeft);
+    // Extract conserved variables
+    float rhoL = stateLeft.x;
+    float rhoR = stateRight.x;
+    vec2 mL = stateLeft.yz;
+    vec2 mR = stateRight.yz;
+    float EL = stateLeft.w;
+    float ER = stateRight.w;
 
-    return avgFlux - diffusion * 0.0000001;
-    //return avgFlux;
+    // Calculate pressures
+    float pL = calculatePressure(rhoL, mL, EL);
+    float pR = calculatePressure(rhoR, mR, ER);
+
+    // Calculate speeds of sound: c = sqrt(gamma * p / rho)
+    float cL = sqrt(gamma * max(pL, 0.01) / (rhoL + 1e-10));
+    float cR = sqrt(gamma * max(pR, 0.01) / (rhoR + 1e-10));
+
+    // Calculate velocities
+    vec2 uL = mL / (rhoL + 1e-10);
+    vec2 uR = mR / (rhoR + 1e-10);
+
+    // Maximum characteristic speed (eigenvalue)
+    float speedL = (xDirection ? abs(uL.x) : abs(uL.y)) + cL;
+    float speedR = (xDirection ? abs(uR.x) : abs(uR.y)) + cR;
+    float maxSpeed = max(speedL, speedR);
+
+    // Lax-Friedrichs flux with wave-speed-based diffusion
+    vec4 avgFlux = 0.5 * (fluxLeft + fluxRight);
+    vec4 diffusion = 0.5 * maxSpeed * (stateRight - stateLeft);
+
+    return avgFlux - diffusion;
 }
 
 void main() {

@@ -378,8 +378,8 @@
 
             // Simulation parameters
             const simParams = {
-                dt: 0.1, // Smaller timestep for stability in compressible flow
-                get numSubsteps() { return Math.round(this.dt / 0.01); },
+                dt: 0.2, // Smaller timestep for stability in compressible flow
+                get numSubsteps() { return Math.ceil(this.dt / 0.02); },
                 trailFade: parseFloat(document.getElementById('trailFade').value),
                 usePeriodic: 1.0
             };
