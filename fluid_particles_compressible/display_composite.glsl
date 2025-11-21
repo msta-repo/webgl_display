@@ -31,8 +31,8 @@ void main() {
     vec2 velocity = momentum / (rho + 1e-10);
 
     // Display density - map to color
-    float color_factor1 = squeeze(abs(max(rho - 1.0, 0.0)), 0.0, 0.5);
-    float color_factor2 = squeeze(abs(min(rho - 1.0, 0.0)), 0.0,0.5);
+    float color_factor1 = squeeze(abs(max(rho - 1.0, 0.0)), 0.0, 0.3);
+    float color_factor2 = squeeze(abs(min(rho - 1.0, 0.0)), 0.0,0.3);
     
 
     // Velocity magnitude for visualization

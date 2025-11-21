@@ -52,7 +52,7 @@ void main() {
     float fadeAlphaMod = (10.0 - fadeAmount + 0.05);
     
     //vec3 color = vec3(255.0, 100.0, 14.0) / 255.0;
-    vec3 color = vec3(108.0, 53.0,136.0)/255.0;
+    vec3 color = vec3(118.0, 63.0,146.0)/255.0;
     color = color * (0.1 + 0.5 * noise(vec2(noise(vec2(vInstanceID*1.4, +vInstanceID*1.0)), 
                                               noise(vec2(vInstanceID*1.4, +vInstanceID*1.0)))));
     
@@ -61,7 +61,7 @@ void main() {
     color = color + colorRandom * 0.1;
     
     // Brighten the core for bloom effect
-    float brightness = 1.0 + core * 1.05;
+    float brightness = 1.0 + core * 1.1;
     color *= brightness;
     
     gl_FragColor = vec4(color * alpha, alpha * 0.4 * fadeAlphaMod);

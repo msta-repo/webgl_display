@@ -34,16 +34,16 @@ void main() {
     
     // Multi-layer bloom effect
     // Core - bright and sharp
-    float core = smoothstep(0.04 + abs(sin(vInstanceID)*0.03), 0.0, dist);
+    float core = smoothstep(0.06 + abs(sin(vInstanceID)*0.00), 0.0, dist);
     
     // Inner glow - medium brightness
-    float innerGlow = smoothstep(0.08, 0.0, dist);
+    float innerGlow = smoothstep(0.06, 0.0, dist);
     
     // Outer glow - soft and large (bloom effect)
-    float outerGlow = smoothstep(0.1, 0.0, dist);
+    float outerGlow = smoothstep(0.08, 0.0, dist);
     
     // Optional: exponential falloff for even softer bloom
-    float softBloom = exp(-dist *30.0/ (5.0 + abs(sin(vInstanceID)*5.0))    );
+    float softBloom = exp(-dist *30.0/ (5.0 + abs(sin(vInstanceID)*0.0))    );
     
     // Combine layers with different intensities
     float alpha = core * 1.0 + innerGlow * 0.0 + outerGlow * 0.0 + softBloom * 0.0;
@@ -52,7 +52,7 @@ void main() {
     float fadeAlphaMod = (10.0 - fadeAmount + 0.05);
     
     //vec3 color = vec3(255.0, 100.0, 14.0) / 255.0;
-    vec3 color = vec3(160.0, 100.0,50.0)/255.0;
+    vec3 color = vec3(160.0, 80.0,20.0)/255.0;
     //color = color * (0.1 + 0.5 * noise(vec2(noise(vec2(vInstanceID*1.4, +vInstanceID*1.0)), 
     //                                          noise(vec2(vInstanceID*1.4, +vInstanceID*1.0)))));
     
