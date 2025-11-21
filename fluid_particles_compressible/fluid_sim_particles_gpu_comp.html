@@ -417,10 +417,10 @@
                 }
             }
             
-            const fluidField = new SimField(gl, computeProgram, simWidth, simHeight, 3);
-            //fluidField.setTextureData(0, initialData);
-            //fluidField.setTextureData(1, initialData);
-            fluidField.setTextureData(2, initialData);
+            const fluidField = new SimField(gl, computeProgram, simWidth, simHeight, 2);
+            fluidField.setTextureData(0, initialData);
+
+
             // ==================== PARTICLE SETUP ====================
             let PARTICLE_COUNT = parseInt(document.getElementById('particleCount').value);
             let PARTICLE_TEX_WIDTH = 256;
@@ -486,7 +486,6 @@
             const fluidUniforms = {
                 pos: gl.getAttribLocation(computeProgram, 'aPosition'),
                 fieldCurrent: gl.getUniformLocation(computeProgram, 'fields_current'),
-                fieldPrevious: gl.getUniformLocation(computeProgram, 'fields_previous'),
                 resolution: gl.getUniformLocation(computeProgram, 'resolution'),
                 dt: gl.getUniformLocation(computeProgram, 'dt'),
                 t: gl.getUniformLocation(computeProgram, 't'),

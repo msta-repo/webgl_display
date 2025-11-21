@@ -5,7 +5,7 @@ precision mediump float;
 #endif
 
 uniform sampler2D fields_current;
-uniform sampler2D fields_previous;
+
 uniform vec2 resolution;
 uniform float dt;
 uniform float t;

@@ -421,7 +421,7 @@
                 }
             }
             
-            const fluidField = new SimField(gl, computeProgram, simWidth, simHeight, 3);
+            const fluidField = new SimField(gl, computeProgram, simWidth, simHeight, 2);
             fluidField.setTextureData(0, initialData);
 
             // ==================== PARTICLE SETUP ====================
@@ -494,7 +494,6 @@
             const fluidUniforms = {
                 pos: gl.getAttribLocation(computeProgram, 'aPosition'),
                 fieldCurrent: gl.getUniformLocation(computeProgram, 'fields_current'),
-                fieldPrevious: gl.getUniformLocation(computeProgram, 'fields_previous'),
                 resolution: gl.getUniformLocation(computeProgram, 'resolution'),
                 dt: gl.getUniformLocation(computeProgram, 'dt'),
                 D: gl.getUniformLocation(computeProgram, 'D'),
