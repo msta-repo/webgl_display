@@ -81,8 +81,8 @@ vec4 laxFriedrichsFlux(vec4 stateLeft, vec4 stateRight, bool xDirection) {
     vec4 avgFlux = 0.5 * (fluxLeft + fluxRight);
     vec4 diffusion = 0.5 * (dx / dt) * (stateRight - stateLeft);
 
-    return avgFlux - diffusion;
-    //return avgFlux
+    return avgFlux - diffusion * 0.0000001;
+    //return avgFlux;
 }
 
 void main() {
@@ -110,6 +110,8 @@ void main() {
     // Update state using finite volume method
     // U_new = U_old - (dt/dx) * (F_right - F_left + F_top - F_bottom)
     vec4 U_new = U_C - (dt / dx) * (F_right - F_left + F_top - F_bottom);
+    //vec4 U_new = U_C - (dt / dx) * (F_right  + F_top );
+
     //vec4 U_new = U_C + (dt/dx)* (F_right) *0.000000000001;
     // Add mouse interaction as momentum source
     if (u_mouseActive == 1) {
@@ -120,7 +122,7 @@ void main() {
         float gaussian = exp(-distSq / (2.0 * sigmaSq));
 
         // Add momentum (scaled by local density)
-        vec2 forceMomentum = u_mouseVel * gaussian * 0.01* U_new.x;
+        vec2 forceMomentum = u_mouseVel * gaussian * 1.0* U_new.x;
         U_new.yz += dt * forceMomentum;
 
         // Add corresponding energy
@@ -134,10 +136,10 @@ void main() {
     }
 
     // Clamp density to prevent negative values
-    //U_new.x = max(U_new.x, 0.01);
+    U_new.x = max(U_new.x, 0.01);
 
     // Clamp energy to prevent negative values
-    //U_new.w = max(U_new.w, 0.01);
+    U_new.w = max(U_new.w, 0.01);
 
     // Apply boundary conditions for walls (only if not periodic)
     if (usePeriodic < 0.5) {

@@ -43,7 +43,7 @@ void main() {
     float rho = fluidState.x;
     vec2 momentum = fluidState.yz;
     vec2 velocity = momentum / (rho + 1e-10); // Add epsilon to avoid division by zero
-
+    
     // Simpler mass calculation that won't overflow on mediump
     float seed = dot(vTexCoord, vec2(12.9898, 78.233));
     float mass = 1.0 + 4.0 * fract(sin(seed) * 43758.5453);

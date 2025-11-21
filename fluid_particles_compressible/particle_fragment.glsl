@@ -46,22 +46,22 @@ void main() {
     float softBloom = exp(-dist *30.0/ (5.0 + abs(sin(vInstanceID)*5.0))    );
     
     // Combine layers with different intensities
-    float alpha = core * 1.0 + innerGlow * 0.2 + outerGlow * 0.1 + softBloom * 0.2;
+    float alpha = core * 1.0 + innerGlow * 0.0 + outerGlow * 0.0 + softBloom * 0.0;
     
     float sparkle = sin(random(vInstanceID + t * 1.9));
     float fadeAlphaMod = (10.0 - fadeAmount + 0.05);
     
     //vec3 color = vec3(255.0, 100.0, 14.0) / 255.0;
-    vec3 color = vec3(108.0, 53.0,136.0)/255.0;
-    color = color * (0.1 + 0.5 * noise(vec2(noise(vec2(vInstanceID*1.4, +vInstanceID*1.0)), 
-                                              noise(vec2(vInstanceID*1.4, +vInstanceID*1.0)))));
+    vec3 color = vec3(160.0, 100.0,50.0)/255.0;
+    //color = color * (0.1 + 0.5 * noise(vec2(noise(vec2(vInstanceID*1.4, +vInstanceID*1.0)), 
+    //                                          noise(vec2(vInstanceID*1.4, +vInstanceID*1.0)))));
     
     vec3 colorRandom = vec3(0.9, 0.8, 0.1) * noise(vec2(vInstanceID*0.1 + t, 
                                                          vInstanceID*0.2 + sin(t)*2.0));
-    color = color + colorRandom * 0.1;
+    //color = color + colorRandom * 0.1;
     
     // Brighten the core for bloom effect
-    float brightness = 1.0 + core * 1.05;
+    float brightness = 1.0 + core * 1.00;
     color *= brightness;
     
     gl_FragColor = vec4(color * alpha, alpha * 0.4 * fadeAlphaMod);
