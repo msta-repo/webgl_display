@@ -31,17 +31,25 @@ void main() {
     vec2 velocity = momentum / (rho + 1e-10);
 
     // Display density - map to color
-    float density_factor = squeeze(rho, 0.9, 1.1);
+    float color_factor1 = squeeze(abs(max(rho - 1.0, 0.0)), 0.0, 0.5);
+    float color_factor2 = squeeze(abs(min(rho - 1.0, 0.0)), 0.0,0.5);
+    
 
     // Velocity magnitude for visualization
     float velocity_mag = length(velocity);
     float velocity_factor = squeeze(velocity_mag, 0.0, 1.0);
 
     // Color scheme for fluid density
-    vec3 fluidColor = vec3(density_factor * 0.7, density_factor * 0.0, density_factor * 0.7);
+    vec3 fluidColor = color_factor1*vec3( 1.0,  0.0,  0.0);
+    fluidColor = fluidColor + color_factor2*vec3(0.0,0.0,1.0);
 
+    //vec3 fluidColor = vec3(squeeze(abs(momentum.x), -1.0,1.0), squeeze(abs(momentum.x), -1.0,1.0), 0.0);
+    
     // Composite trail on top of fluid
-    vec3 finalColor = mix(fluidColor, trail.rgb, 0.4);
-    //vec3 finalColor = vec3(momentum.x, momentum.y, 0.0);
+    vec3 finalColor = mix(fluidColor, trail.rgb, 0.2);
+    //vec3 finalColor = fluidColor*(1.0 - trail.rgb) + 0.1*trail.rgb;
+
+    //vec3 finalColor = fluidColor;
+
     gl_FragColor = vec4(finalColor, 1.0);
 }

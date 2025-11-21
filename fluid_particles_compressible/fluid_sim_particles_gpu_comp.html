@@ -379,7 +379,7 @@
             // Simulation parameters
             const simParams = {
                 dt: 0.1, // Smaller timestep for stability in compressible flow
-                get numSubsteps() { return Math.ceil(this.dt / 0.001); },
+                get numSubsteps() { return Math.round(this.dt / 0.01); },
                 trailFade: parseFloat(document.getElementById('trailFade').value),
                 usePeriodic: 1.0
             };
@@ -400,7 +400,7 @@
                     let v = 0.0;
 
                     // Uniform density and pressure
-                    let rho = 100.0;
+                    let rho = 1.0;
                     //let p = 10.0*(Math.random()-0.5) + 5.0;
                     let p  = 1.0;
                     // Calculate momentum from velocity
@@ -418,9 +418,9 @@
             }
             
             const fluidField = new SimField(gl, computeProgram, simWidth, simHeight, 3);
-            fluidField.setTextureData(0, initialData);
+            //fluidField.setTextureData(0, initialData);
             //fluidField.setTextureData(1, initialData);
-
+            fluidField.setTextureData(2, initialData);
             // ==================== PARTICLE SETUP ====================
             let PARTICLE_COUNT = parseInt(document.getElementById('particleCount').value);
             let PARTICLE_TEX_WIDTH = 256;
