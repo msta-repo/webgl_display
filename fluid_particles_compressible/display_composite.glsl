@@ -40,8 +40,8 @@ void main() {
     float velocity_factor = squeeze(velocity_mag, 0.0, 1.0);
 
     // Color scheme for fluid density
-    vec3 fluidColor = color_factor1*vec3( 1.0,  0.0,  0.0);
-    fluidColor = fluidColor + color_factor2*vec3(0.0,0.0,1.0);
+    vec3 fluidColor = color_factor1*vec3( 230.0, 122.0, 215.0)/255.0;
+    fluidColor = fluidColor + color_factor2*vec3(103.0, 224.0, 160.0)/255.0;
 
     //vec3 fluidColor = vec3(squeeze(abs(momentum.x), -1.0,1.0), squeeze(abs(momentum.x), -1.0,1.0), 0.0);
     

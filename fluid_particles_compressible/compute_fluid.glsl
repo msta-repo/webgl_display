@@ -29,6 +29,26 @@ vec2 wrap(vec2 coord) {
     return fract(coord);
 }
 
+// Minmod slope limiter (prevents oscillations)
+float minmod(float a, float b) {
+    if (a * b <= 0.0) return 0.0; // Different signs or one is zero
+    if (abs(a) < abs(b)) return a;
+    return b;
+}
+
+// Apply minmod limiter to each component of a vec4
+vec4 limitSlope(vec4 left, vec4 center, vec4 right) {
+    vec4 slopeLeft = center - left;
+    vec4 slopeRight = right - center;
+
+    return vec4(
+        minmod(slopeLeft.x, slopeRight.x),
+        minmod(slopeLeft.y, slopeRight.y),
+        minmod(slopeLeft.z, slopeRight.z),
+        minmod(slopeLeft.w, slopeRight.w)
+    );
+}
+
 // Calculate pressure from conserved variables
 // p = (gamma - 1) * (E - 1/2 * rho * u^2)
 float calculatePressure(float rho, vec2 m, float E) {
@@ -121,15 +141,46 @@ void main() {
     vec4 U_T = texture2D(fields_current, wrap(texCoord + vec2(0.0, Step.y)));
     vec4 U_D = texture2D(fields_current, wrap(texCoord - vec2(0.0, Step.y)));
 
-    // Compute fluxes at cell edges using Lax-Friedrichs scheme
-    // Right edge (i+1/2)
-    vec4 F_right = laxFriedrichsFlux(U_C, U_R, true);
-    // Left edge (i-1/2)
-    vec4 F_left = laxFriedrichsFlux(U_L, U_C, true);
-    // Top edge (j+1/2)
-    vec4 F_top = laxFriedrichsFlux(U_C, U_T, false);
-    // Bottom edge (j-1/2)
-    vec4 F_bottom = laxFriedrichsFlux(U_D, U_C, false);
+    // Extended stencil for slope limiting
+    vec4 U_RR = texture2D(fields_current, wrap(texCoord + vec2(2.0 * Step.x, 0.0)));
+    vec4 U_LL = texture2D(fields_current, wrap(texCoord - vec2(2.0 * Step.x, 0.0)));
+    vec4 U_TT = texture2D(fields_current, wrap(texCoord + vec2(0.0, 2.0 * Step.y)));
+    vec4 U_DD = texture2D(fields_current, wrap(texCoord - vec2(0.0, 2.0 * Step.y)));
+
+    // ==================== MUSCL RECONSTRUCTION ====================
+    // Reconstruct left and right states at cell interfaces using slope limiting
+
+    // X-direction reconstruction
+    vec4 slope_C_x = limitSlope(U_L, U_C, U_R);
+    vec4 slope_R_x = limitSlope(U_C, U_R, U_RR);
+    vec4 slope_L_x = limitSlope(U_LL, U_L, U_C);
+
+    // States at right interface (i+1/2): left and right extrapolated values
+    vec4 U_right_L = U_C + 0.5 * slope_C_x;  // Extrapolate from left cell
+    vec4 U_right_R = U_R - 0.5 * slope_R_x;  // Extrapolate from right cell
+
+    // States at left interface (i-1/2)
+    vec4 U_left_L = U_L + 0.5 * slope_L_x;
+    vec4 U_left_R = U_C - 0.5 * slope_C_x;
+
+    // Y-direction reconstruction
+    vec4 slope_C_y = limitSlope(U_D, U_C, U_T);
+    vec4 slope_T_y = limitSlope(U_C, U_T, U_TT);
+    vec4 slope_D_y = limitSlope(U_DD, U_D, U_C);
+
+    // States at top interface (j+1/2)
+    vec4 U_top_L = U_C + 0.5 * slope_C_y;
+    vec4 U_top_R = U_T - 0.5 * slope_T_y;
+
+    // States at bottom interface (j-1/2)
+    vec4 U_bottom_L = U_D + 0.5 * slope_D_y;
+    vec4 U_bottom_R = U_C - 0.5 * slope_C_y;
+
+    // Compute fluxes at cell edges using reconstructed states
+    vec4 F_right = laxFriedrichsFlux(U_right_L, U_right_R, true);
+    vec4 F_left = laxFriedrichsFlux(U_left_L, U_left_R, true);
+    vec4 F_top = laxFriedrichsFlux(U_top_L, U_top_R, false);
+    vec4 F_bottom = laxFriedrichsFlux(U_bottom_L, U_bottom_R, false);
 
     // Update state using finite volume method
     // U_new = U_old - (dt/dx) * (F_right - F_left + F_top - F_bottom)

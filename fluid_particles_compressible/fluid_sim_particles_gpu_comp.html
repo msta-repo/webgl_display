@@ -320,7 +320,7 @@
             setupMouseHandlers(canvas);
             setupTouchHandlers(canvas);
 
-            const simScale = Math.sqrt(1/2);
+            const simScale = Math.sqrt(1);
             const simWidth = Math.floor(window.innerWidth*simScale);
             const simHeight = Math.floor(window.innerHeight*simScale);
 
@@ -396,7 +396,7 @@
                     let r = Math.sqrt(dx*dx + dy*dy);
 
                     // Similar to original: small random velocities
-                    let u =  0.0;
+                    let u =  0.5;
                     let v = 0.0;
 
                     // Uniform density and pressure
