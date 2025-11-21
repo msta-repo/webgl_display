@@ -6,54 +6,42 @@
 
 uniform sampler2D fluidTexture;
 uniform sampler2D trailTexture;
-uniform sampler2D pressureTexture;
 
 uniform vec2 resolution;
 
-
+// Compressible fluid parameters
+const float gamma = 1.4;
 
 float squeeze(float x, float minVal, float maxVal){
-    return (clamp(x, minVal, maxVal) - minVal)/(maxVal -minVal) ;
+    return (clamp(x, minVal, maxVal) - minVal)/(maxVal - minVal);
 }
-
-
-
 
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution;
-    
-    vec4 FC = texture2D(fluidTexture, uv);
+
+    // Read fluid state: [rho, momentum_x, momentum_y, energy]
+    vec4 state = texture2D(fluidTexture, uv);
     vec4 trail = texture2D(trailTexture, uv);
-    
-    
-    //gl_FragColor = vec4(mPos, 1.0,mNeg, 1.0);
-    vec3 color;
-    color = vec3(0.05,0.15,0.9);
 
-    float density_factor = squeeze( FC.z ,0.999,  1.4);
+    float rho = state.x;
+    vec2 momentum = state.yz;
+    float E = state.w;
 
-    float velocity_factor = squeeze( abs(FC.y),0.0, 0.1);
+    // Calculate velocity
+    vec2 velocity = momentum / (rho + 1e-10);
 
+    // Display density - map to color
+    float density_factor = squeeze(rho, 0.9, 1.1);
 
-    vec3 fluid = vec3(0.7, 0.0,0.7)*density_factor;
-    //vec3 fluid = vec3(108.0, 0.0,166.0)*density_factor;
+    // Velocity magnitude for visualization
+    float velocity_mag = length(velocity);
+    float velocity_factor = squeeze(velocity_mag, 0.0, 1.0);
 
-    vec3 vort = vec3(0.0,0.0,0.3)*squeeze(FC.a, 0.0,0.3);
+    // Color scheme for fluid density
+    vec3 fluidColor = vec3(density_factor * 0.7, density_factor * 0.0, density_factor * 0.7);
 
-     vort = vort + vec3(0.0,0.3,0.0)*squeeze(-FC.a, 0.0,0.3);
-    //vort += vec3(0.0,0.3,0.0)*abs(squeeze(FC.a,-0.5,0.0));
-
-    //vec3 fluid = vec3(abs(FC.x), abs(FC.y), 0.0)*10.0*density_factor;
     // Composite trail on top of fluid
-    //vec3 finalColor = fluid.rgb+  trail.rgb;
-    vec3 finalColor = mix( mix(fluid.rgb*1.1, vort.rgb, 0.4),  trail.rgb, 0.4)  ;
-    //vec3 finalColor = fluid;
-
-    //finalColor = mix( vec3(squeeze(FC.r, -10.0,10.0), 0.0,0.0),  trail.rgb, 0.4)  ;
-    
-    //gl_FragColor = vec4(finalColor, 1.0);
-   
-
+    vec3 finalColor = mix(fluidColor, trail.rgb, 0.4);
+    //vec3 finalColor = vec3(momentum.x, momentum.y, 0.0);
     gl_FragColor = vec4(finalColor, 1.0);
-
 }

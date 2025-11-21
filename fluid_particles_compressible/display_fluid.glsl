@@ -4,36 +4,43 @@ precision highp float;
 precision mediump float;
 #endif
 
-
 uniform sampler2D fields_current;
 uniform vec2 resolution;
+
+// Compressible fluid parameters
+const float gamma = 1.4;
 
 float squeeze(float x, float maxVal){
     return (clamp(x, -maxVal, maxVal)/(maxVal) + 1.0 )/2.0;
 }
 
 float squeeze(float x, float minVal, float maxVal){
-    return (clamp(x, minVal, maxVal)/(maxVal -minVal) + 1.0 )/2.0;
+    return (clamp(x, minVal, maxVal) - minVal)/(maxVal - minVal);
 }
-
 
 void main() {
     vec2 texCoord = gl_FragCoord.xy / resolution;
 
+    // Read fluid state: [rho, momentum_x, momentum_y, energy]
+    vec4 state = texture2D(fields_current, texCoord);
 
-    vec4 FC = texture2D(fields_current, texCoord);
-    
-    //gl_FragColor = vec4(mPos, 1.0,mNeg, 1.0);
-    vec3 color;
-    color = vec3(0.05,0.15,0.9);
+    float rho = state.x;
+    vec2 momentum = state.yz;
+    float E = state.w;
 
-    float density_factor = (squeeze( FC.z ,0.5,  3.0) -0.5);
+    // Calculate velocity
+    vec2 velocity = momentum / (rho + 1e-10);
 
-    float velocity_factor = squeeze( sqrt(dot(FC.xy, FC.xy)), 0.00001);
+    // Display density
+    // Map density to color - assuming typical range 0.1 to 2.0
+    float density_factor = squeeze(rho, 0.1, 2.0);
 
-    gl_FragColor = vec4(squeeze( FC.x, 1.0)*density_factor,squeeze( FC.y, 1.0)*density_factor,density_factor,  1.0);
-    //gl_FragColor = vec4(density_factor*vec3(0.4,0.1,0.0),  1.0);
-    //gl_FragColor = vec4(vec3(0.9, 0.3,0.1)*FC.w, 1.0);
+    // Velocity magnitude for additional visualization
+    float velocity_mag = length(velocity);
+    float velocity_factor = squeeze(velocity_mag, 0.0, 1.0);
 
-    //gl_FragColor = vec4(FC.w*0.5, 0.0,0.0,  1.0);
+    // Color scheme: density mapped to brightness
+    vec3 color = vec3(density_factor * 0.8, density_factor * 0.4, density_factor);
+
+    gl_FragColor = vec4(color, 1.0);
 }
