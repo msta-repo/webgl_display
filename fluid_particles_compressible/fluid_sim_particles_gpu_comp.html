@@ -397,7 +397,7 @@
                     let r = Math.sqrt(dx*dx + dy*dy);
 
                     // Similar to original: small random velocities
-                    let u =  0.0;
+                    let u =  0.5;
                     let v = 0.0;
 
                     // Uniform density and pressure
@@ -603,7 +603,7 @@
                     gl.uniform1f(fluidUniforms.dt, simParams.dt / simParams.numSubsteps);
                     gl.uniform1f(fluidUniforms.t, t + substep * simParams.dt / simParams.numSubsteps);
                     gl.uniform1f(fluidUniforms.usePeriodic, simParams.usePeriodic);
-                    gl.uniform1f(fluidUniforms.useGhots, simParams.useGhosts);
+                    gl.uniform1f(fluidUniforms.useGhosts, simParams.useGhosts);
                     setMouseUniforms(gl, fluidUniforms);
 
                     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -627,7 +627,7 @@
                 gl.uniform2f(particleComputeUniforms.texSize, PARTICLE_TEX_WIDTH, PARTICLE_TEX_HEIGHT);
                 gl.uniform1f(particleComputeUniforms.dt, simParams.dt); 
                 gl.uniform1f(particleComputeUniforms.t, t);
-                gl.uniform1f(particleComputeProgram.useGhosts, simParams.useGhosts);
+                gl.uniform1f(particleComputeUniforms.useGhosts, simParams.useGhosts);
 
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
                 gl.enableVertexAttribArray(particleComputeUniforms.pos);

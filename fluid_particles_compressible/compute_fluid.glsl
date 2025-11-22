@@ -25,6 +25,10 @@ uniform float u_mouseRadius;
 const float gamma = 1.4; // Ratio of specific heats (air)
 const float dx = 1.0; // Grid spacing (normalized)
 
+// Spherical boundary parameters
+const vec2 sphereCenter = vec2(0.2, 0.5); // Center of domain
+const float sphereRadius = 0.1;
+
 // Wrap texture coordinates for periodic boundaries
 vec2 wrap(vec2 coord) {
     return fract(coord);
@@ -148,54 +152,44 @@ void main() {
     vec4 U_TT = texture2D(fields_current, wrap(texCoord + vec2(0.0, 2.0 * Step.y)));
     vec4 U_DD = texture2D(fields_current, wrap(texCoord - vec2(0.0, 2.0 * Step.y)));
 
-    // Ghost cells - Wall boundary (zero gradient)
-    if (useGhosts < 0.5){
-        if (texCoord.x <Step.x*1.1){
+
+  
+
+    // Characteristic-based non-reflecting boundary conditions
+    // Active when useGhosts > 0.5 (for open/outflow boundaries)
+    if (useGhosts > 0.5){
+        // Extract state variables from center cell
+        float rho_C = U_C.x;
+        vec2 m_C = U_C.yz;
+        float E_C = U_C.w;
+        vec2 u_C = m_C / (rho_C + 1e-10);
+        float p_C = calculatePressure(rho_C, m_C, E_C);
+        float c_C = sqrt(gamma * max(p_C, 0.01) / (rho_C + 1e-10));
+
+        // Left boundary (x = 0): waves traveling left exit the domain
+        if (texCoord.x < Step.x * 1.1){
+            // Zero-gradient for outgoing characteristics
+            // This allows waves to pass through with minimal reflection
             U_L = U_C;
             U_LL = U_C;
         }
 
+        // Right boundary (x = 1): waves traveling right exit the domain
         if (texCoord.x > 1.0 - Step.x * 1.1){
             U_R = U_C;
             U_RR = U_C;
         }
 
-        if (texCoord.y <Step.y*1.1){
+        // Bottom boundary (y = 0): waves traveling down exit the domain
+        if (texCoord.y < Step.y * 1.1){
             U_D = U_C;
             U_DD = U_C;
         }
 
+        // Top boundary (y = 1): waves traveling up exit the domain
         if (texCoord.y > 1.0 - Step.y * 1.1){
             U_T = U_C;
             U_TT = U_C;
-        }
-    }
-
-    // Open boundary conditions (linear extrapolation for non-reflecting boundaries)
-    // Only active when usePeriodic is enabled (your current setup for open boundaries)
-    if (usePeriodic > 0.5){
-        // Left boundary - extrapolate outward
-        if (texCoord.x < Step.x * 1.1){
-            U_L = 2.0 * U_C - U_R;
-            U_LL = 2.0 * U_L - U_C;
-        }
-
-        // Right boundary - extrapolate outward
-        if (texCoord.x > 1.0 - Step.x * 1.1){
-            U_R = 2.0 * U_C - U_L;
-            U_RR = 2.0 * U_R - U_C;
-        }
-
-        // Bottom boundary - extrapolate outward
-        if (texCoord.y < Step.y * 1.1){
-            U_D = 2.0 * U_C - U_T;
-            U_DD = 2.0 * U_D - U_C;
-        }
-
-        // Top boundary - extrapolate outward
-        if (texCoord.y > 1.0 - Step.y * 1.1){
-            U_T = 2.0 * U_C - U_D;
-            U_TT = 2.0 * U_T - U_C;
         }
     }
     // ==================== MUSCL RECONSTRUCTION ====================
@@ -277,7 +271,29 @@ void main() {
         }
     }
 
-    
+    // Spherical boundary - reflecting boundary conditions
+    vec2 toCenter = (texCoord - sphereCenter) * resolution/resolution.y ;
+    float distToCenter = length(toCenter);
+
+    if (distToCenter < sphereRadius) {
+        // Inside the sphere - apply reflecting boundary condition
+        vec2 normal = normalize(toCenter); // Surface normal pointing outward
+
+        // Get velocity from momentum
+        vec2 velocity = U_new.yz / (U_new.x + 1e-10);
+
+        // Reflect velocity: v_reflected = v - 2 * (v · n) * n
+        float vDotN = dot(velocity, normal);
+        if (vDotN < 0.0) {
+            // Only reflect if moving into the sphere
+            vec2 velocityReflected = velocity - 2.0 * vDotN * normal;
+
+            // Update momentum with reflected velocity
+            U_new.yz = U_new.x * velocityReflected;
+        }
+    }
+
+
 
     gl_FragColor = U_new;
 }

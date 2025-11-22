@@ -22,8 +22,9 @@ vec2 posToUV(vec2 pos) {
 // Wrapping function - more reliable than if statements
 vec2 wrapPosition(vec2 pos) {
 
-     if (useGhosts<0.5){
+     if (useGhosts>0.5){
     // if ghost cells are used at border, let particles go off screen
+
     }
      else {
     // Use fract for wrapping instead of if statements
