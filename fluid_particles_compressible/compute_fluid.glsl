@@ -25,9 +25,7 @@ uniform float u_mouseRadius;
 const float gamma = 1.4; // Ratio of specific heats (air)
 const float dx = 1.0; // Grid spacing (normalized)
 
-// Spherical boundary parameters
-const vec2 sphereCenter = vec2(0.2, 0.5); // Center of domain
-const float sphereRadius = 0.1;
+
 
 // Wrap texture coordinates for periodic boundaries
 vec2 wrap(vec2 coord) {
@@ -271,27 +269,6 @@ void main() {
         }
     }
 
-    // Spherical boundary - reflecting boundary conditions
-    vec2 toCenter = (texCoord - sphereCenter) * resolution/resolution.y ;
-    float distToCenter = length(toCenter);
-
-    if (distToCenter < sphereRadius) {
-        // Inside the sphere - apply reflecting boundary condition
-        vec2 normal = normalize(toCenter); // Surface normal pointing outward
-
-        // Get velocity from momentum
-        vec2 velocity = U_new.yz / (U_new.x + 1e-10);
-
-        // Reflect velocity: v_reflected = v - 2 * (v · n) * n
-        float vDotN = dot(velocity, normal);
-        if (vDotN < 0.0) {
-            // Only reflect if moving into the sphere
-            vec2 velocityReflected = velocity - 2.0 * vDotN * normal;
-
-            // Update momentum with reflected velocity
-            U_new.yz = U_new.x * velocityReflected;
-        }
-    }
 
 
 
