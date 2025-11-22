@@ -148,26 +148,54 @@ void main() {
     vec4 U_TT = texture2D(fields_current, wrap(texCoord + vec2(0.0, 2.0 * Step.y)));
     vec4 U_DD = texture2D(fields_current, wrap(texCoord - vec2(0.0, 2.0 * Step.y)));
 
-    // Ghost cells
+    // Ghost cells - Wall boundary (zero gradient)
     if (useGhosts < 0.5){
         if (texCoord.x <Step.x*1.1){
-            U_L = U_C; 
+            U_L = U_C;
             U_LL = U_C;
         }
 
         if (texCoord.x > 1.0 - Step.x * 1.1){
-            U_R = U_C; 
+            U_R = U_C;
             U_RR = U_C;
         }
 
         if (texCoord.y <Step.y*1.1){
-            U_D = U_C; 
+            U_D = U_C;
             U_DD = U_C;
         }
 
         if (texCoord.y > 1.0 - Step.y * 1.1){
-            U_T = U_C; 
+            U_T = U_C;
             U_TT = U_C;
+        }
+    }
+
+    // Open boundary conditions (linear extrapolation for non-reflecting boundaries)
+    // Only active when usePeriodic is enabled (your current setup for open boundaries)
+    if (usePeriodic > 0.5){
+        // Left boundary - extrapolate outward
+        if (texCoord.x < Step.x * 1.1){
+            U_L = 2.0 * U_C - U_R;
+            U_LL = 2.0 * U_L - U_C;
+        }
+
+        // Right boundary - extrapolate outward
+        if (texCoord.x > 1.0 - Step.x * 1.1){
+            U_R = 2.0 * U_C - U_L;
+            U_RR = 2.0 * U_R - U_C;
+        }
+
+        // Bottom boundary - extrapolate outward
+        if (texCoord.y < Step.y * 1.1){
+            U_D = 2.0 * U_C - U_T;
+            U_DD = 2.0 * U_D - U_C;
+        }
+
+        // Top boundary - extrapolate outward
+        if (texCoord.y > 1.0 - Step.y * 1.1){
+            U_T = 2.0 * U_C - U_D;
+            U_TT = 2.0 * U_T - U_C;
         }
     }
     // ==================== MUSCL RECONSTRUCTION ====================
