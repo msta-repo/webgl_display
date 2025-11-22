@@ -27,7 +27,7 @@ const float dx = 1.0; // Grid spacing (normalized)
 
 // Spherical boundary parameters
 const vec2 sphereCenter = vec2(0.2, 0.5); // Center of domain
-const float sphereRadius = 0.1;
+const float sphereRadius = 0.071;
 
 // Wrap texture coordinates for periodic boundaries
 vec2 wrap(vec2 coord) {
@@ -155,6 +155,11 @@ void main() {
 
   
 
+    // Calculate ramped inflow velocity
+    float t_rampup = 100.0;
+    float targetVelocity = 0.9;
+    float currentInflowVelocity = targetVelocity * min(t / t_rampup, 1.0);
+
     // Characteristic-based non-reflecting boundary conditions
     // Active when useGhosts > 0.5 (for open/outflow boundaries)
     if (useGhosts > 0.5){
@@ -166,28 +171,49 @@ void main() {
         float p_C = calculatePressure(rho_C, m_C, E_C);
         float c_C = sqrt(gamma * max(p_C, 0.01) / (rho_C + 1e-10));
 
-        // Left boundary (x = 0): waves traveling left exit the domain
+        // Left boundary (x = 0): INFLOW with fixed density and pressure
         if (texCoord.x < Step.x * 1.1){
-            // Zero-gradient for outgoing characteristics
-            // This allows waves to pass through with minimal reflection
-            U_L = U_C;
-            U_LL = U_C;
+            // Fix density and pressure at inflow
+            float rho_inflow = 0.95;
+            float p_inflow = 1.0;
+
+            vec2 u_inflow = vec2(currentInflowVelocity, 0.0);
+
+            // Add small vertical perturbation to break symmetry and trigger vortex shedding
+            if (t > t_rampup) {
+                float perturbAmplitude = 0.09 * currentInflowVelocity;
+                float perturbFrequency = 0.5;
+                u_inflow.y = perturbAmplitude * sin(perturbFrequency * t + texCoord.y * 6.28);
+            }
+
+            // Convert to conserved variables
+            vec2 m_inflow = rho_inflow * u_inflow;
+            float E_inflow = p_inflow / (gamma - 1.0) + 0.5 * rho_inflow * dot(u_inflow, u_inflow);
+
+            U_L = vec4(rho_inflow, m_inflow, E_inflow);
+            U_LL = U_L;
         }
 
         // Right boundary (x = 1): waves traveling right exit the domain
         if (texCoord.x > 1.0 - Step.x * 1.1){
+            //U_R = 2.0*U_C - U_L;
+            //U_RR = 2.0*U_R - U_C;
             U_R = U_C;
             U_RR = U_C;
         }
 
         // Bottom boundary (y = 0): waves traveling down exit the domain
         if (texCoord.y < Step.y * 1.1){
+            //U_D = 2.0*U_C - U_T;
+            //U_DD = 2.0*U_R - U_D;
             U_D = U_C;
             U_DD = U_C;
         }
 
         // Top boundary (y = 1): waves traveling up exit the domain
         if (texCoord.y > 1.0 - Step.y * 1.1){
+            //U_T = 2.0*U_C - U_D;
+            //U_TT = 2.0*U_T - U_T;
             U_T = U_C;
             U_TT = U_C;
         }
