@@ -32,8 +32,8 @@ void main() {
 
     // Display density - map to color
     float mean_rho = 1.1;
-    float color_factor1 = squeeze(abs(max(rho - mean_rho, 0.0)), 0.0, 0.6);
-    float color_factor2 = squeeze(abs(min(rho - mean_rho, 0.0)), 0.0,0.6);
+    float color_factor1 = squeeze(abs(max(rho - mean_rho, 0.0)), 0.0, 0.3);
+    float color_factor2 = squeeze(abs(min(rho - mean_rho, 0.0)), 0.0,0.3);
     
 
     // Velocity magnitude for visualization

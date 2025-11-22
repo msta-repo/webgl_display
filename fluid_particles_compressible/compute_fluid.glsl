@@ -148,12 +148,12 @@ void main() {
     vec4 U_DD = texture2D(fields_current, wrap(texCoord - vec2(0.0, 2.0 * Step.y)));
 
     // Calculate ramped inflow parameters
-    float t_rampup = 100.0;
-    float targetVelocity = 1.1;
+    float t_rampup = 6000.0;
+    float targetVelocity = 0.5;
     float currentInflowVelocity = targetVelocity * min(t / t_rampup, 1.0);
     
     // Define inflow state variables for reuse
-    float rho_inflow = 0.99;
+    float rho_inflow = 1.0;
     float p_inflow = 1.0;
     vec2 u_inflow = vec2(currentInflowVelocity, 0.0);
     

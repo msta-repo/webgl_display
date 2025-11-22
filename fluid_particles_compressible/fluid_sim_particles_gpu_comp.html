@@ -320,7 +320,7 @@
             setupMouseHandlers(canvas);
             setupTouchHandlers(canvas);
 
-            const simScale = Math.sqrt(1);
+            const simScale = Math.sqrt(1/5);
             const simWidth = Math.floor(window.innerWidth*simScale);
             const simHeight = Math.floor(window.innerHeight*simScale);
 
@@ -378,7 +378,7 @@
 
             // Simulation parameters
             const simParams = {
-                dt: 0.2, // Smaller timestep for stability in compressible flow
+                dt: 1.2, // Smaller timestep for stability in compressible flow
                 get numSubsteps() { return Math.ceil(this.dt / 0.02); },
                 trailFade: parseFloat(document.getElementById('trailFade').value),
                 usePeriodic: 1.0,
