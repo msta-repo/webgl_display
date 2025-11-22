@@ -13,6 +13,7 @@ varying float vX;
 varying float vY;
 
 uniform float usePeriodic;
+uniform float useGhosts;
 
 // Mouse interaction uniforms
 uniform int u_mouseActive;
@@ -147,6 +148,28 @@ void main() {
     vec4 U_TT = texture2D(fields_current, wrap(texCoord + vec2(0.0, 2.0 * Step.y)));
     vec4 U_DD = texture2D(fields_current, wrap(texCoord - vec2(0.0, 2.0 * Step.y)));
 
+    // Ghost cells
+    if (useGhosts < 0.5){
+        if (texCoord.x <Step.x*1.1){
+            U_L = U_C; 
+            U_LL = U_C;
+        }
+
+        if (texCoord.x > 1.0 - Step.x * 1.1){
+            U_R = U_C; 
+            U_RR = U_C;
+        }
+
+        if (texCoord.y <Step.y*1.1){
+            U_D = U_C; 
+            U_DD = U_C;
+        }
+
+        if (texCoord.y > 1.0 - Step.y * 1.1){
+            U_T = U_C; 
+            U_TT = U_C;
+        }
+    }
     // ==================== MUSCL RECONSTRUCTION ====================
     // Reconstruct left and right states at cell interfaces using slope limiting
 
@@ -225,6 +248,8 @@ void main() {
             U_new.z = 0.0; // Zero y-momentum at y boundaries
         }
     }
+
+    
 
     gl_FragColor = U_new;
 }

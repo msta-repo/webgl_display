@@ -9,6 +9,8 @@ uniform sampler2D velocityField;
 uniform vec2 particleTexSize;
 uniform float dt;
 
+uniform float useGhosts;
+
 // Compressible fluid parameters
 const float gamma = 1.4;
 
@@ -19,9 +21,16 @@ vec2 posToUV(vec2 pos) {
 
 // Wrapping function - more reliable than if statements
 vec2 wrapPosition(vec2 pos) {
+
+     if (useGhosts<0.5){
+    // if ghost cells are used at border, let particles go off screen
+    }
+     else {
     // Use fract for wrapping instead of if statements
     pos.x = mod(pos.x + 1.0, 2.0) - 1.0;
     pos.y = mod(pos.y + 1.0, 2.0) - 1.0;
+    }
+
     return pos;
 }
 
@@ -46,10 +55,10 @@ void main() {
     
     // Simpler mass calculation that won't overflow on mediump
     float seed = dot(vTexCoord, vec2(12.9898, 78.233));
-    float mass = 1.0;// + 4.0 * fract(sin(seed) * 43758.5453);
+    float mass = 1.0 + 4.0 * fract(sin(seed) * 43758.5453);
 
     // Update position with safety checks
-    vec2 deltaPos = dt * velocity * 0.01 / mass;
+    vec2 deltaPos = dt * velocity * 0.01  / mass ;
 
     // Clamp delta to prevent extreme jumps (safety check)
     deltaPos = clamp(deltaPos, vec2(-0.1), vec2(0.1));
@@ -57,7 +66,9 @@ void main() {
     pos += deltaPos;
 
     // Wrap around boundaries (more reliable than if statements)
+    
     pos = wrapPosition(pos);
+    
 
     gl_FragColor = vec4(pos, 0.0, 1.0);
 }
