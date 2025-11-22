@@ -57,10 +57,7 @@ vec4 limitSlope(vec4 left, vec4 center, vec4 right) {
 // Calculate pressure from conserved variables
 // p = (gamma - 1) * (E - 1/2 * rho * u^2)
 float calculatePressure(float rho, vec2 m, float E) {
-
-    //float kineticEnergy = 0.5 * rho * dot(u, u);
-    float kineticEnergy = dot(m,m)/(2.0*(rho + 1E-10));
-
+    float kineticEnergy = dot(m,m)/(2.0*(rho + 1e-10));
     return (gamma - 1.0) * (E - kineticEnergy);
 }
 
@@ -73,11 +70,10 @@ vec4 calculateFlux(vec4 state, bool xDirection) {
     float E = state.w;
 
     // Calculate velocity
-    vec2 u = m / (rho + 1e-10); // Add small epsilon to avoid division by zero
+    vec2 u = m / (rho + 1e-10); 
 
     // Calculate pressure
     float p = calculatePressure(rho, m, E);
-
     
     vec4 flux;
     if (xDirection) {
@@ -138,99 +134,86 @@ void main() {
     vec2 texCoord = (vec2(vX, vY) + 1.0) / 2.0;
     vec2 Step = 1.0 / resolution;
 
-    // Sample current state and neighbors with wrapping
-    // State: [rho, momentum_x, momentum_y, total_energy]
+    // Sample current state and neighbors with wrapping (default for periodic)
     vec4 U_C = texture2D(fields_current, wrap(texCoord));
     vec4 U_R = texture2D(fields_current, wrap(texCoord + vec2(Step.x, 0.0)));
     vec4 U_L = texture2D(fields_current, wrap(texCoord - vec2(Step.x, 0.0)));
     vec4 U_T = texture2D(fields_current, wrap(texCoord + vec2(0.0, Step.y)));
     vec4 U_D = texture2D(fields_current, wrap(texCoord - vec2(0.0, Step.y)));
 
-    // Extended stencil for slope limiting
+    // Extended stencil
     vec4 U_RR = texture2D(fields_current, wrap(texCoord + vec2(2.0 * Step.x, 0.0)));
     vec4 U_LL = texture2D(fields_current, wrap(texCoord - vec2(2.0 * Step.x, 0.0)));
     vec4 U_TT = texture2D(fields_current, wrap(texCoord + vec2(0.0, 2.0 * Step.y)));
     vec4 U_DD = texture2D(fields_current, wrap(texCoord - vec2(0.0, 2.0 * Step.y)));
 
-
-  
-
-    // Calculate ramped inflow velocity
+    // Calculate ramped inflow parameters
     float t_rampup = 100.0;
-    float targetVelocity = 0.9;
+    float targetVelocity = 1.1;
     float currentInflowVelocity = targetVelocity * min(t / t_rampup, 1.0);
+    
+    // Define inflow state variables for reuse
+    float rho_inflow = 0.99;
+    float p_inflow = 1.0;
+    vec2 u_inflow = vec2(currentInflowVelocity, 0.0);
+    
+    // Add small vertical perturbation to inflow to trigger vortex shedding
+    if (t > t_rampup) {
+        float perturbAmplitude = 0.09 * currentInflowVelocity;
+        float perturbFrequency = 0.5;
+        u_inflow.y = perturbAmplitude * sin(perturbFrequency * t + texCoord.y * 6.28);
+    }
+    
+    vec2 m_inflow = rho_inflow * u_inflow;
+    float E_inflow = p_inflow / (gamma - 1.0) + 0.5 * rho_inflow * dot(u_inflow, u_inflow);
+    vec4 U_inflow_state = vec4(rho_inflow, m_inflow, E_inflow);
 
-    // Characteristic-based non-reflecting boundary conditions
-    // Active when useGhosts > 0.5 (for open/outflow boundaries)
+    // ==================== BOUNDARY CONDITIONS (GHOST CELLS) ====================
+    // If we are not using periodic boundaries, we modify the neighbors (ghosts)
+    // to enforce open/inflow boundaries.
     if (useGhosts > 0.5){
-        // Extract state variables from center cell
-        float rho_C = U_C.x;
-        vec2 m_C = U_C.yz;
-        float E_C = U_C.w;
-        vec2 u_C = m_C / (rho_C + 1e-10);
-        float p_C = calculatePressure(rho_C, m_C, E_C);
-        float c_C = sqrt(gamma * max(p_C, 0.01) / (rho_C + 1e-10));
-
-        // Left boundary (x = 0): INFLOW with fixed density and pressure
-        if (texCoord.x < Step.x * 1.1){
-            // Fix density and pressure at inflow
-            float rho_inflow = 0.95;
-            float p_inflow = 1.0;
-
-            vec2 u_inflow = vec2(currentInflowVelocity, 0.0);
-
-            // Add small vertical perturbation to break symmetry and trigger vortex shedding
-            if (t > t_rampup) {
-                float perturbAmplitude = 0.09 * currentInflowVelocity;
-                float perturbFrequency = 0.5;
-                u_inflow.y = perturbAmplitude * sin(perturbFrequency * t + texCoord.y * 6.28);
-            }
-
-            // Convert to conserved variables
-            vec2 m_inflow = rho_inflow * u_inflow;
-            float E_inflow = p_inflow / (gamma - 1.0) + 0.5 * rho_inflow * dot(u_inflow, u_inflow);
-
-            U_L = vec4(rho_inflow, m_inflow, E_inflow);
-            U_LL = U_L;
+        
+        // --- LEFT BOUNDARY (Inflow) ---
+        if (texCoord.x < Step.x * 4.5){
+            // Force the left neighbor to be the fixed inflow state
+            U_L = U_inflow_state;
+            U_LL = U_inflow_state; 
         }
 
-        // Right boundary (x = 1): waves traveling right exit the domain
-        if (texCoord.x > 1.0 - Step.x * 1.1){
-            //U_R = 2.0*U_C - U_L;
-            //U_RR = 2.0*U_R - U_C;
+        // --- RIGHT BOUNDARY (Outflow) ---
+        if (texCoord.x > 1.0 - Step.x * 4.5){
+            // Zero-order extrapolation (Continuative Boundary)
+            // We copy the current cell's state into the ghost cells.
+            // This allows waves to propagate out without reflection.
             U_R = U_C;
             U_RR = U_C;
         }
 
-        // Bottom boundary (y = 0): waves traveling down exit the domain
-        if (texCoord.y < Step.y * 1.1){
-            //U_D = 2.0*U_C - U_T;
-            //U_DD = 2.0*U_R - U_D;
+        // --- BOTTOM BOUNDARY (Slip/Outflow) ---
+        if (texCoord.y < Step.y * 4.5){
+            // Continuative Boundary. 
+            // By copying U_C to U_D, we allow vertical momentum to carry mass out.
             U_D = U_C;
             U_DD = U_C;
         }
 
-        // Top boundary (y = 1): waves traveling up exit the domain
-        if (texCoord.y > 1.0 - Step.y * 1.1){
-            //U_T = 2.0*U_C - U_D;
-            //U_TT = 2.0*U_T - U_T;
+        // --- TOP BOUNDARY (Slip/Outflow) ---
+        if (texCoord.y > 1.0 - Step.y * 4.5){
+            // Continuative Boundary.
             U_T = U_C;
             U_TT = U_C;
         }
     }
-    // ==================== MUSCL RECONSTRUCTION ====================
-    // Reconstruct left and right states at cell interfaces using slope limiting
 
+    // ==================== MUSCL RECONSTRUCTION ====================
+    
     // X-direction reconstruction
     vec4 slope_C_x = limitSlope(U_L, U_C, U_R);
     vec4 slope_R_x = limitSlope(U_C, U_R, U_RR);
     vec4 slope_L_x = limitSlope(U_LL, U_L, U_C);
 
-    // States at right interface (i+1/2): left and right extrapolated values
-    vec4 U_right_L = U_C + 0.5 * slope_C_x;  // Extrapolate from left cell
-    vec4 U_right_R = U_R - 0.5 * slope_R_x;  // Extrapolate from right cell
-
-    // States at left interface (i-1/2)
+    vec4 U_right_L = U_C + 0.5 * slope_C_x;
+    vec4 U_right_R = U_R - 0.5 * slope_R_x;
     vec4 U_left_L = U_L + 0.5 * slope_L_x;
     vec4 U_left_R = U_C - 0.5 * slope_C_x;
 
@@ -239,27 +222,23 @@ void main() {
     vec4 slope_T_y = limitSlope(U_C, U_T, U_TT);
     vec4 slope_D_y = limitSlope(U_DD, U_D, U_C);
 
-    // States at top interface (j+1/2)
     vec4 U_top_L = U_C + 0.5 * slope_C_y;
     vec4 U_top_R = U_T - 0.5 * slope_T_y;
-
-    // States at bottom interface (j-1/2)
     vec4 U_bottom_L = U_D + 0.5 * slope_D_y;
     vec4 U_bottom_R = U_C - 0.5 * slope_C_y;
 
-    // Compute fluxes at cell edges using reconstructed states
+    // Compute fluxes
     vec4 F_right = laxFriedrichsFlux(U_right_L, U_right_R, true);
     vec4 F_left = laxFriedrichsFlux(U_left_L, U_left_R, true);
     vec4 F_top = laxFriedrichsFlux(U_top_L, U_top_R, false);
     vec4 F_bottom = laxFriedrichsFlux(U_bottom_L, U_bottom_R, false);
 
-    // Update state using finite volume method
-    // U_new = U_old - (dt/dx) * (F_right - F_left + F_top - F_bottom)
+    // Update state
     vec4 U_new = U_C - (dt / dx) * (F_right - F_left + F_top - F_bottom);
-    //vec4 U_new = U_C - (dt / dx) * (F_right  + F_top );
 
-    //vec4 U_new = U_C + (dt/dx)* (F_right) *0.000000000001;
-    // Add mouse interaction as momentum source
+    // ==================== INTERACTION & CLAMPING ====================
+
+    // Mouse interaction
     if (u_mouseActive == 1) {
         vec2 toMouse = texCoord - u_mousePos;
         float distSq = dot(toMouse, toMouse);
@@ -267,59 +246,46 @@ void main() {
         float sigmaSq = sigma * sigma;
         float gaussian = exp(-distSq / (2.0 * sigmaSq));
 
-        // Add momentum (scaled by local density)
-        vec2 forceMomentum = u_mouseVel * gaussian * 1.0* U_new.x;
+        vec2 forceMomentum = u_mouseVel * gaussian * 1.0 * U_new.x;
         U_new.yz += dt * forceMomentum;
 
-        // Add corresponding energy
-        //vec2 u = U_new.yz / U_new.x;
         vec2 m = U_new.yz;
         float rho = U_new.x;
-        //float kineticEnergy = 0.5 * U_new.x * dot(u, u);
-        float kineticEnergy = dot(m,m)/(2.0*(rho + 1E-10));
+        float kineticEnergy = dot(m,m)/(2.0*(rho + 1e-10));
         float p = calculatePressure(U_new.x, U_new.yz, U_new.w);
         U_new.w = p / (gamma - 1.0) + kineticEnergy;
     }
 
-    // Clamp density to prevent negative values
+    // Clamp density/energy to prevent NaNs
     U_new.x = max(U_new.x, 0.01);
-
-    // Clamp energy to prevent negative values
     U_new.w = max(U_new.w, 0.01);
 
-    // Apply boundary conditions for walls (only if not periodic)
-    if (usePeriodic < 0.5) {
-        if (texCoord.x < Step.x * 3.0 || texCoord.x > 1.0 - Step.x * 3.0) {
-            U_new.y = 0.0; // Zero x-momentum at x boundaries
-        }
-        if (texCoord.y < Step.y * 3.0 || texCoord.y > 1.0 - Step.y * 3.0) {
-            U_new.z = 0.0; // Zero y-momentum at y boundaries
-        }
-    }
-
-    // Spherical boundary - reflecting boundary conditions
+    // ==================== FINAL BOUNDARY ENFORCEMENT ====================
+    
+    // 1. Spherical Internal Obstacle
     vec2 toCenter = (texCoord - sphereCenter) * resolution/resolution.y ;
     float distToCenter = length(toCenter);
 
     if (distToCenter < sphereRadius) {
-        // Inside the sphere - apply reflecting boundary condition
-        vec2 normal = normalize(toCenter); // Surface normal pointing outward
-
-        // Get velocity from momentum
+        vec2 normal = normalize(toCenter);
         vec2 velocity = U_new.yz / (U_new.x + 1e-10);
-
-        // Reflect velocity: v_reflected = v - 2 * (v · n) * n
         float vDotN = dot(velocity, normal);
         if (vDotN < 0.0) {
-            // Only reflect if moving into the sphere
             vec2 velocityReflected = velocity - 2.0 * vDotN * normal;
-
-            // Update momentum with reflected velocity
             U_new.yz = U_new.x * velocityReflected;
         }
     }
 
-
+    // 2. Inflow Enforcement (Left Wall)
+    // We strictly overwrite the pixels at the very left edge to ensure 
+    // the inflow condition remains constant and isn't eroded by numerical diffusion.
+    if (usePeriodic < 0.5) {
+        if (texCoord.x < Step.x * 1.5) {
+            U_new = U_inflow_state;
+        }
+        // NOTE: Top, Bottom, and Right clamps have been removed.
+        // The ghost cell logic above handles the outflow.
+    }
 
     gl_FragColor = U_new;
 }

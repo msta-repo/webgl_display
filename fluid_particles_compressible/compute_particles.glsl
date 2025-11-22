@@ -56,7 +56,7 @@ void main() {
     
     // Simpler mass calculation that won't overflow on mediump
     float seed = dot(vTexCoord, vec2(12.9898, 78.233));
-    float mass = 0.5 + 4.0 * fract(sin(seed) * 43758.5453);
+    float mass = 4.0 + 4.0 * fract(sin(seed) * 43758.5453);
 
     // Update position with safety checks
     vec2 deltaPos = dt * velocity * 0.01  / mass * rho ;
